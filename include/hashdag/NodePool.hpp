@@ -64,26 +64,28 @@ private:
 	}
 	template <size_t NodeSpanExtent>
 	inline Word upsert_node(auto &&get_node_words, Word level, std::span<const Word, NodeSpanExtent> node_span) {
-		Word level_bucket_index = WordSpanHasher{}(node_span) & (m_config.GetBucketsAtLevel(level) - 1);
-		Word bucket_index = m_bucket_level_bases[level] + level_bucket_index;
+		const Word bucket_index =
+		    m_bucket_level_bases[level] + (WordSpanHasher{}(node_span) & (m_config.GetBucketsAtLevel(level) - 1));
+		const Word bucket_words = m_bucket_word_counts[bucket_index];
+		const Word bucket_page_index = bucket_index << m_config.page_bits_per_bucket;
 
 		// Find Node in the bucket
 		{
-			Word bucket_words = m_bucket_word_counts[bucket_index];
-			Word page_index = bucket_index << m_config.page_bits_per_bucket;
+			Word cur_bucket_words = bucket_words;
+			Word cur_page_index = bucket_page_index;
 
-			while (bucket_words >= m_config.GetWordsPerPage()) {
+			while (cur_bucket_words >= m_config.GetWordsPerPage()) {
 				Word node =
-				    find_node(get_node_words, page_index << m_config.word_bits_per_page,
-				              std::span<const Word>{read_page(page_index), m_config.GetWordsPerPage()}, node_span);
+				    find_node(get_node_words, cur_page_index << m_config.word_bits_per_page,
+				              std::span<const Word>{read_page(cur_page_index), m_config.GetWordsPerPage()}, node_span);
 				if (node)
 					return node;
-				bucket_words -= m_config.GetWordsPerPage();
-				++page_index;
+				cur_bucket_words -= m_config.GetWordsPerPage();
+				++cur_page_index;
 			}
-			if (bucket_words) {
-				Word node = find_node(get_node_words, page_index << m_config.word_bits_per_page,
-				                      std::span<const Word>{read_page(page_index), bucket_words}, node_span);
+			if (cur_bucket_words) {
+				Word node = find_node(get_node_words, cur_page_index << m_config.word_bits_per_page,
+				                      std::span<const Word>{read_page(cur_page_index), cur_bucket_words}, node_span);
 				if (node)
 					return node;
 			}
@@ -91,29 +93,26 @@ private:
 
 		// Append Node if not exist
 		{
-			Word bucket_words = m_bucket_word_counts[bucket_index];
-
 			// If the bucket is full, return 0
 			if (bucket_words + node_span.size() > m_config.GetWordsPerBucket())
 				return 0;
 
-			Word first_page_index = bucket_index << m_config.page_bits_per_bucket;
-			Word inner_page_index = bucket_words >> m_config.word_bits_per_page;
-			Word page_offset = bucket_words & (m_config.GetWordsPerPage() - 1);
-			Word page_index = first_page_index | inner_page_index;
-			if (page_offset + node_span.size() > m_config.GetWordsPerPage()) {
+			Word dst_page_slot = bucket_words >> m_config.word_bits_per_page; // PageID in bucket
+			Word dst_page_index = bucket_page_index | dst_page_slot;
+			Word dst_page_offset = bucket_words & (m_config.GetWordsPerPage() - 1);
+			if (dst_page_offset + node_span.size() > m_config.GetWordsPerPage()) {
 				// Fill the remaining with zero
-				zero_page(page_index, page_offset, m_config.GetWordsPerPage() - page_offset);
+				zero_page(dst_page_index, dst_page_offset, m_config.GetWordsPerPage() - dst_page_offset);
 				// Write node to next page
-				++inner_page_index;
-				page_offset = 0;
-				page_index = first_page_index + inner_page_index;
+				++dst_page_slot;
+				++dst_page_index;
+				dst_page_offset = 0;
 			}
 
-			write_page(page_index, page_offset, node_span);
-			m_bucket_word_counts[bucket_index] = (inner_page_index << m_config.word_bits_per_page) | page_offset;
+			write_page(dst_page_index, dst_page_offset, node_span);
+			m_bucket_word_counts[bucket_index] = (dst_page_slot << m_config.word_bits_per_page) | dst_page_offset;
 
-			return (page_index << m_config.word_bits_per_page) | page_offset;
+			return (dst_page_index << m_config.word_bits_per_page) | dst_page_offset;
 		}
 	}
 
