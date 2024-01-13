@@ -69,13 +69,12 @@ private:
 
 		// Find Node in the bucket
 		{
-			Word page_index = bucket_index << m_config.page_bits_per_bucket;
 			Word bucket_words = m_bucket_word_counts[bucket_index];
-			Word node_base = page_index << m_config.word_bits_per_page;
+			Word page_index = bucket_index << m_config.page_bits_per_bucket;
 
 			while (bucket_words >= m_config.GetWordsPerPage()) {
 				Word node =
-				    find_node(get_node_words, node_base,
+				    find_node(get_node_words, page_index << m_config.word_bits_per_page,
 				              std::span<const Word>{read_page(page_index), m_config.GetWordsPerPage()}, node_span);
 				if (node)
 					return node;
@@ -83,7 +82,7 @@ private:
 				++page_index;
 			}
 			if (bucket_words) {
-				Word node = find_node(get_node_words, node_base,
+				Word node = find_node(get_node_words, page_index << m_config.word_bits_per_page,
 				                      std::span<const Word>{read_page(page_index), bucket_words}, node_span);
 				if (node)
 					return node;
@@ -103,8 +102,8 @@ private:
 			Word page_offset = bucket_words & (m_config.GetWordsPerPage() - 1);
 			Word page_index = first_page_index | inner_page_index;
 			if (page_offset + node_span.size() > m_config.GetWordsPerPage()) {
-				// Set a zero word so that find_node_in_span() knows the page is ended
-				zero_page(page_index, page_offset, 1);
+				// Fill the remaining with zero
+				zero_page(page_index, page_offset, m_config.GetWordsPerPage() - page_offset);
 				// Write node to next page
 				++inner_page_index;
 				page_offset = 0;
