@@ -79,7 +79,10 @@ private:
 			node_iter = child_iter + child_count;
 		}
 	}
-	inline const Word *get_page(Word page_id) const { return static_cast<const Derived *>(this)->GetPage(page_id); }
+	inline const Word *read_page(Word page_id) const { return static_cast<const Derived *>(this)->ReadPage(page_id); }
+	inline const Word *zero_page(Word page_id, Word page_offset, Word zero_words) const {
+		return static_cast<const Derived *>(this)->ZeroPage(page_id, page_offset, zero_words);
+	}
 	inline const Word *write_page(Word page_id, Word page_offset, std::span<const Word> word_span) const {
 		return static_cast<const Derived *>(this)->WritePage(page_id, page_offset, word_span);
 	}
@@ -96,6 +99,7 @@ public:
 		m_bucket_word_counts.resize(total_buckets);
 	}
 	inline const auto &GetNodeConfig() const { return m_config; }
+
 	inline Word UpsertNode(Word level, const Word *p_packed_node) {
 		Word level_bucket_index = get_packed_node_hash(p_packed_node) & (m_config.GetBucketsAtLevel(level) - 1);
 		Word bucket_index = m_bucket_level_bases[level] + level_bucket_index;
@@ -108,14 +112,14 @@ public:
 
 			while (bucket_words >= m_config.GetWordsPerPage()) {
 				Word node = find_node_in_span(
-				    node_base, std::span<const Word>{get_page(page_index), m_config.GetWordsPerPage()}, p_packed_node);
+				    node_base, std::span<const Word>{read_page(page_index), m_config.GetWordsPerPage()}, p_packed_node);
 				if (node)
 					return node;
 				bucket_words -= m_config.GetWordsPerPage();
 				++page_index;
 			}
 			if (bucket_words) {
-				Word node = find_node_in_span(node_base, std::span<const Word>{get_page(page_index), bucket_words},
+				Word node = find_node_in_span(node_base, std::span<const Word>{read_page(page_index), bucket_words},
 				                              p_packed_node);
 				if (node)
 					return node;
@@ -131,16 +135,23 @@ public:
 			if (bucket_words + node_words > m_config.GetWordsPerBucket())
 				return 0;
 
-			Word bucket_page_index = bucket_words >> m_config.word_bits_per_page;
+			Word first_page_index = bucket_index << m_config.page_bits_per_bucket;
+			Word inner_page_index = bucket_words >> m_config.word_bits_per_page;
 			Word page_offset = bucket_words & (m_config.GetWordsPerPage() - 1);
+			Word page_index = first_page_index | inner_page_index;
 			if (page_offset + node_words > m_config.GetWordsPerPage()) {
-				++bucket_page_index;
+				// Set a zero word so that find_node_in_span() knows the page is ended
+				zero_page(page_index, page_offset, 1);
+				// Write node to next page
+				++inner_page_index;
 				page_offset = 0;
+				page_index = first_page_index + inner_page_index;
 			}
 
-			Word page_index = (bucket_index << m_config.page_bits_per_bucket) + bucket_page_index;
 			write_page(page_index, page_offset, std::span<const Word>{p_packed_node, node_words});
-			m_bucket_word_counts[bucket_index] = (bucket_page_index << m_config.word_bits_per_page) + page_offset;
+			m_bucket_word_counts[bucket_index] = (inner_page_index << m_config.word_bits_per_page) | page_offset;
+
+			return (page_index << m_config.word_bits_per_page) | page_offset;
 		}
 	}
 };

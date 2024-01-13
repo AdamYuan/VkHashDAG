@@ -14,6 +14,8 @@
 namespace hashdag {
 
 template <std::unsigned_integral Word> struct NodeConfig {
+	// At least 16 words per page so that at least a node (at most 9 words) can fit into a page
+	inline static constexpr Word kMinWordBitsPerPage = 4;
 	Word word_bits_per_page;
 	Word page_bits_per_bucket;
 	std::vector<Word> bucket_bits_each_level;
@@ -25,6 +27,9 @@ template <std::unsigned_integral Word> struct NodeConfig {
 	inline Word GetLevelCount() const { return bucket_bits_each_level.size(); }
 
 	inline static bool Validate(const NodeConfig &config) {
+		if (config.word_bits_per_page < kMinWordBitsPerPage)
+			return false;
+
 		uint64_t bucket_count = 0;
 		for (Word c : config.buckets_each_level)
 			bucket_count += 1ULL << c;
