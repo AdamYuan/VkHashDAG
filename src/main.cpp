@@ -39,11 +39,11 @@ int main() {
 
 	/* std::vector<myvk::Ptr<myvk::Buffer>> buffers(1024);
 	for (auto &buffer : buffers) {
-		buffer = myvk::Buffer::Create(device, 1024 * 1024, VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT,
-		                              VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_AUTO);
-		auto data = (uint32_t *)buffer->Map();
-		data[0] = 123;
-		buffer->Unmap();
+	    buffer = myvk::Buffer::Create(device, 1024 * 1024, VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT,
+	                                  VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_AUTO);
+	    auto data = (uint32_t *)buffer->Map();
+	    data[0] = 123;
+	    buffer->Unmap();
 	} */
 
 	myvk::ImGuiInit(window, myvk::CommandPool::Create(generic_queue));

@@ -16,34 +16,39 @@
 namespace hashdag {
 
 template <typename Derived, std::unsigned_integral Word, typename WordSpanHasher> class NodePoolBase {
+#ifndef HASHDAG_NODEPOOL_TEST
 private:
+#else
+public:
+#endif
 	NodeConfig<Word> m_config;
 	std::vector<Word> m_bucket_level_bases, m_bucket_word_counts;
 
-	/* inline static void pack_node_inplace(Word *p_unpacked_node) {
-	    Word child_mask = *p_unpacked_node;
-	    Word *p_children = p_unpacked_node + 1, *p_next_child = p_children;
+	inline static std::span<const Word> get_packed_node_inplace(Word *p_unpacked_node) {
+		Word child_mask = *p_unpacked_node;
+		Word *p_children = p_unpacked_node + 1, *p_next_child = p_children;
 
-	    while (child_mask) {
-	        Word child_idx = std::countr_zero(child_mask);
-	        child_mask ^= 1 << child_idx;
-	        *(p_next_child++) = p_children[child_idx];
-	    }
+		while (child_mask) {
+			Word child_idx = std::countr_zero(child_mask);
+			child_mask ^= 1 << child_idx;
+			*(p_next_child++) = p_children[child_idx];
+		}
+		return std::span<const Word>{p_unpacked_node, p_next_child};
 	}
 	inline static std::array<Word, 9> get_unpacked_node(const Word *p_packed_node) {
-	    Word child_mask = *p_packed_node;
-	    const Word *p_next_child = p_packed_node + 1;
+		Word child_mask = *p_packed_node;
+		const Word *p_next_child = p_packed_node + 1;
 
-	    std::array<Word, 9> unpacked_node = {child_mask};
-	    Word *p_children = unpacked_node.data() + 1;
+		std::array<Word, 9> unpacked_node = {child_mask};
+		Word *p_children = unpacked_node.data() + 1;
 
-	    while (child_mask) {
-	        Word child_idx = std::countr_zero(child_mask);
-	        child_mask ^= 1 << child_idx;
-	        p_children[child_idx] = *(p_next_child++);
-	    }
-	    return unpacked_node;
-	} */
+		while (child_mask) {
+			Word child_idx = std::countr_zero(child_mask);
+			child_mask ^= 1 << child_idx;
+			p_children[child_idx] = *(p_next_child++);
+		}
+		return unpacked_node;
+	}
 	inline const Word *read_page(Word page_id) const { return static_cast<const Derived *>(this)->ReadPage(page_id); }
 	inline void zero_page(Word page_id, Word page_offset, Word zero_words) const {
 		static_cast<const Derived *>(this)->ZeroPage(page_id, page_offset, zero_words);
@@ -57,10 +62,13 @@ private:
 	                             std::span<const Word, NodeSpanExtent> node_span) {
 		for (auto iter = word_span.begin(); iter + node_span.size() <= word_span.end();) {
 			Word node_words = get_node_words(&(*iter));
+			if (node_words == 0)
+				return 0;
 			if (node_words == node_span.size() && std::equal(node_span.begin(), node_span.end(), iter))
 				return base + (iter - word_span.begin());
 			iter += node_words;
 		}
+		return 0;
 	}
 	template <size_t NodeSpanExtent>
 	inline Word upsert_node(auto &&get_node_words, Word level, std::span<const Word, NodeSpanExtent> node_span) {
@@ -117,7 +125,7 @@ private:
 	}
 
 public:
-	inline NodePoolBase(NodeConfig<Word> config) : m_config{std::move(config)} {
+	inline explicit NodePoolBase(NodeConfig<Word> config) : m_config{std::move(config)} {
 		m_bucket_level_bases.resize(m_config.GetLevelCount());
 		for (Word i = 1; i < m_config.GetLevelCount(); ++i)
 			m_bucket_level_bases[i] = m_config.GetBucketsAtLevel(i - 1) + m_bucket_level_bases[i - 1];
@@ -131,16 +139,18 @@ public:
 
 	inline Word UpsertNode(Word level, const Word *p_packed_node) {
 		const auto get_node_words = [](const Word *p_packed_node) {
-			static constexpr uint8_t kPopCount8[] = {
-			    0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4, 1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5,
-			    1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5, 2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
-			    1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5, 2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
-			    2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6, 3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
-			    1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5, 2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
+			// Zero for empty node so that find_node can break
+			static constexpr uint8_t kPopCount8_Plus1_Zero[] = {
+			    0, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5, 2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
 			    2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6, 3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
 			    2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6, 3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
-			    3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7, 4, 5, 5, 6, 5, 6, 6, 7, 5, 6, 6, 7, 6, 7, 7, 8};
-			return 1 + kPopCount8[uint8_t(*p_packed_node)];
+			    3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7, 4, 5, 5, 6, 5, 6, 6, 7, 5, 6, 6, 7, 6, 7, 7, 8,
+			    2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6, 3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
+			    3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7, 4, 5, 5, 6, 5, 6, 6, 7, 5, 6, 6, 7, 6, 7, 7, 8,
+			    3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7, 4, 5, 5, 6, 5, 6, 6, 7, 5, 6, 6, 7, 6, 7, 7, 8,
+			    4, 5, 5, 6, 5, 6, 6, 7, 5, 6, 6, 7, 6, 7, 7, 8, 5, 6, 6, 7, 6, 7, 7, 8, 6, 7, 7, 8, 7, 8, 8, 9,
+			};
+			return kPopCount8_Plus1_Zero[uint8_t(*p_packed_node)];
 		};
 		return upsert_node(get_node_words, level, std::span<const Word>{p_packed_node, get_node_words(p_packed_node)});
 	}
@@ -148,6 +158,7 @@ public:
 		const auto get_node_words = [](auto) { return NodeConfig<Word>::GetWordsPerLeaf(); };
 		return upsert_node(get_node_words, level, std::span<const Word, NodeConfig<Word>::GetWordsPerLeaf()>{p_leaf});
 	}
+	template <typename Editor> inline Word Edit() {}
 };
 
 } // namespace hashdag
