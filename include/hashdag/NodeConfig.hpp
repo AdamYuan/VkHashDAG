@@ -27,11 +27,18 @@ template <std::unsigned_integral Word> struct NodeConfig {
 	inline Word GetWordsPerBucket() const { return 1 << (word_bits_per_page + page_bits_per_bucket); }
 	inline Word GetBucketsAtLevel(Word level) const { return 1 << bucket_bits_each_level[level]; }
 	inline Word GetLevelCount() const { return bucket_bits_each_level.size(); }
+	inline Word GetTotalBuckets() const {
+		Word total_buckets = 0;
+		for (Word bucket_bits : bucket_bits_each_level)
+			total_buckets += (1u << bucket_bits);
+		return total_buckets;
+	}
+	inline Word GetTotalPages() const { return GetTotalBuckets() << page_bits_per_bucket; }
+	inline Word GetTotalWords() const { return GetTotalBuckets() << (word_bits_per_page + page_bits_per_bucket); }
 
 	inline static bool Validate(const NodeConfig &config) {
 		if (config.word_bits_per_page < kMinWordBitsPerPage)
 			return false;
-
 		uint64_t bucket_count = 0;
 		for (Word c : config.buckets_each_level)
 			bucket_count += 1ULL << c;

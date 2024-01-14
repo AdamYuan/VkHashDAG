@@ -11,12 +11,13 @@
 #include <bit>
 #include <concepts>
 #include <numeric>
+#include <optional>
 #include <span>
 
 namespace hashdag {
 
 template <typename Derived, std::unsigned_integral Word, typename WordSpanHasher> class NodePoolBase {
-#ifndef HASHDAG_NODEPOOL_TEST
+#ifndef HASHDAG_TEST
 private:
 #else
 public:
@@ -50,28 +51,30 @@ public:
 		return unpacked_node;
 	}
 	inline const Word *read_page(Word page_id) const { return static_cast<const Derived *>(this)->ReadPage(page_id); }
-	inline void zero_page(Word page_id, Word page_offset, Word zero_words) const {
-		static_cast<const Derived *>(this)->ZeroPage(page_id, page_offset, zero_words);
+	inline void zero_page(Word page_id, Word page_offset, Word zero_words) {
+		static_cast<Derived *>(this)->ZeroPage(page_id, page_offset, zero_words);
 	}
-	inline void write_page(Word page_id, Word page_offset, std::span<const Word> word_span) const {
-		static_cast<const Derived *>(this)->WritePage(page_id, page_offset, word_span);
+	inline void write_page(Word page_id, Word page_offset, std::span<const Word> word_span) {
+		static_cast<Derived *>(this)->WritePage(page_id, page_offset, word_span);
 	}
 
 	template <size_t NodeSpanExtent>
-	inline static Word find_node(auto &&get_node_words, Word base, std::span<const Word> word_span,
-	                             std::span<const Word, NodeSpanExtent> node_span) {
+	inline static std::optional<Word> find_node_in_span(auto &&get_node_words, Word base,
+	                                                    std::span<const Word> word_span,
+	                                                    std::span<const Word, NodeSpanExtent> node_span) {
 		for (auto iter = word_span.begin(); iter + node_span.size() <= word_span.end();) {
 			Word node_words = get_node_words(&(*iter));
 			if (node_words == 0)
-				return 0;
+				break;
 			if (node_words == node_span.size() && std::equal(node_span.begin(), node_span.end(), iter))
 				return base + (iter - word_span.begin());
 			iter += node_words;
 		}
-		return 0;
+		return std::nullopt;
 	}
 	template <size_t NodeSpanExtent>
-	inline Word upsert_node(auto &&get_node_words, Word level, std::span<const Word, NodeSpanExtent> node_span) {
+	inline std::optional<Word> upsert_node(auto &&get_node_words, Word level,
+	                                       std::span<const Word, NodeSpanExtent> node_span) {
 		const Word bucket_index =
 		    m_bucket_level_bases[level] + (WordSpanHasher{}(node_span) & (m_config.GetBucketsAtLevel(level) - 1));
 		const Word bucket_words = m_bucket_word_counts[bucket_index];
@@ -83,27 +86,28 @@ public:
 			Word cur_page_index = bucket_page_index;
 
 			while (cur_bucket_words >= m_config.GetWordsPerPage()) {
-				Word node =
-				    find_node(get_node_words, cur_page_index << m_config.word_bits_per_page,
-				              std::span<const Word>{read_page(cur_page_index), m_config.GetWordsPerPage()}, node_span);
-				if (node)
-					return node;
+				std::optional<Word> opt_node = find_node_in_span(
+				    get_node_words, cur_page_index << m_config.word_bits_per_page,
+				    std::span<const Word>{read_page(cur_page_index), m_config.GetWordsPerPage()}, node_span);
+				if (opt_node)
+					return opt_node;
 				cur_bucket_words -= m_config.GetWordsPerPage();
 				++cur_page_index;
 			}
 			if (cur_bucket_words) {
-				Word node = find_node(get_node_words, cur_page_index << m_config.word_bits_per_page,
+				std::optional<Word> opt_node =
+				    find_node_in_span(get_node_words, cur_page_index << m_config.word_bits_per_page,
 				                      std::span<const Word>{read_page(cur_page_index), cur_bucket_words}, node_span);
-				if (node)
-					return node;
+				if (opt_node)
+					return opt_node;
 			}
 		}
 
 		// Append Node if not exist
 		{
-			// If the bucket is full, return 0
+			// If the bucket is full, return std::nullopt
 			if (bucket_words + node_span.size() > m_config.GetWordsPerBucket())
-				return 0;
+				return std::nullopt;
 
 			Word dst_page_slot = bucket_words >> m_config.word_bits_per_page; // PageID in bucket
 			Word dst_page_index = bucket_page_index | dst_page_slot;
@@ -118,7 +122,8 @@ public:
 			}
 
 			write_page(dst_page_index, dst_page_offset, node_span);
-			m_bucket_word_counts[bucket_index] = (dst_page_slot << m_config.word_bits_per_page) | dst_page_offset;
+			m_bucket_word_counts[bucket_index] =
+			    ((dst_page_slot << m_config.word_bits_per_page) | dst_page_offset) + node_span.size();
 
 			return (dst_page_index << m_config.word_bits_per_page) | dst_page_offset;
 		}
@@ -126,18 +131,15 @@ public:
 
 public:
 	inline explicit NodePoolBase(NodeConfig<Word> config) : m_config{std::move(config)} {
+		m_bucket_word_counts.resize(m_config.GetTotalBuckets());
+
 		m_bucket_level_bases.resize(m_config.GetLevelCount());
 		for (Word i = 1; i < m_config.GetLevelCount(); ++i)
 			m_bucket_level_bases[i] = m_config.GetBucketsAtLevel(i - 1) + m_bucket_level_bases[i - 1];
-
-		Word total_buckets = 0;
-		for (Word i = 0; i < m_config.GetLevelCount(); ++i)
-			total_buckets += m_config.GetBucketsAtLevel(i);
-		m_bucket_word_counts.resize(total_buckets);
 	}
 	inline const auto &GetNodeConfig() const { return m_config; }
 
-	inline Word UpsertNode(Word level, const Word *p_packed_node) {
+	inline std::optional<Word> UpsertNode(Word level, std::span<const Word> node_span) {
 		const auto get_node_words = [](const Word *p_packed_node) {
 			// Zero for empty node so that find_node can break
 			static constexpr uint8_t kPopCount8_Plus1_Zero[] = {
@@ -152,11 +154,12 @@ public:
 			};
 			return kPopCount8_Plus1_Zero[uint8_t(*p_packed_node)];
 		};
-		return upsert_node(get_node_words, level, std::span<const Word>{p_packed_node, get_node_words(p_packed_node)});
+		return upsert_node(get_node_words, level, node_span);
 	}
-	inline Word UpsertLeaf(Word level, const Word *p_leaf) {
-		const auto get_node_words = [](auto) { return NodeConfig<Word>::GetWordsPerLeaf(); };
-		return upsert_node(get_node_words, level, std::span<const Word, NodeConfig<Word>::GetWordsPerLeaf()>{p_leaf});
+	inline std::optional<Word> UpsertLeaf(Word level,
+	                                      std::span<const Word, NodeConfig<Word>::kWordsPerLeaf> leaf_span) {
+		const auto get_node_words = [](auto) { return NodeConfig<Word>::kWordsPerLeaf; };
+		return upsert_node(get_node_words, level, leaf_span);
 	}
 	template <typename Editor> inline Word Edit() {}
 };

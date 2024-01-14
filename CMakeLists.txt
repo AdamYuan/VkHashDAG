@@ -33,10 +33,16 @@ add_subdirectory(shader)
 
 add_executable(VkHashDAG
         src/main.cpp
-        )
+)
 target_include_directories(VkHashDAG PRIVATE include)
 
 find_package(Threads REQUIRED)
 target_link_libraries(VkHashDAG PRIVATE dep shader Threads::Threads)
 
 install(TARGETS VkHashDAG RUNTIME DESTINATION)
+
+add_executable(HashDAGTest
+        test/main.cpp
+)
+target_include_directories(HashDAGTest PRIVATE include)
+target_compile_definitions(HashDAGTest PRIVATE -DHASHDAG_TEST)
