@@ -157,7 +157,10 @@ public:
 		}
 		return std::span<const Word>{unpacked_node.data(), p_next_child};
 	}
-	inline static std::array<Word, 9> get_unpacked_node(const Word *p_node) {
+	inline std::array<Word, 9> get_unpacked_node_array(NodePointer<Word> node_ptr) const {
+		if (!node_ptr)
+			return {};
+		const Word *p_node = read_node(*node_ptr);
 		Word child_mask = *p_node;
 		const Word *p_next_child = p_node + 1;
 
@@ -171,9 +174,35 @@ public:
 		}
 		return unpacked_node;
 	}
-	inline NodePointer<Word> edit_leaf(const Editor<Word> auto &editor, NodePointer<Word> node_ptr,
+	inline std::array<Word, NodeConfig<Word>::kWordsPerLeaf> get_leaf_array(NodePointer<Word> leaf_ptr) const {
+		if (!leaf_ptr)
+			return {};
+		const Word *p_leaf = read_node(*leaf_ptr);
+		std::array<Word, NodeConfig<Word>::kWordsPerLeaf> leaf;
+		std::copy(p_leaf, p_leaf + NodeConfig<Word>::kWordsPerLeaf, leaf.data());
+		return leaf;
+	}
+	inline NodePointer<Word> edit_leaf(const Editor<Word> auto &editor, NodePointer<Word> leaf_ptr,
 	                                   const NodeCoord<Word> &coord) {
-		return NodePointer<Word>::Null();
+		using LeafArray = std::array<Word, NodeConfig<Word>::kWordsPerLeaf>;
+
+		LeafArray leaf = get_leaf_array(leaf_ptr);
+
+		bool changed = false;
+
+		for (Word i = 0; i < 64; ++i) {
+			constexpr Word kWordBits = sizeof(Word) * 8, kWordMask = (1u << kWordBits) - 1u;
+
+			bool voxel = (leaf[i >> kWordBits] >> (i & kWordMask)) & 1u;
+			bool new_voxel = editor.Edit(coord.GetChildCoord(i), voxel);
+
+			if (new_voxel != voxel) {
+				changed = true;
+				leaf[i >> kWordBits] ^= (1u << (i & kWordMask)); // Flip
+			}
+		}
+
+		return changed ? (leaf == LeafArray{0} ? NodePointer<Word>::Null() : upsert_leaf(coord.level, leaf)) : leaf_ptr;
 	}
 	inline NodePointer<Word> edit_inner_node(const Editor<Word> auto &editor, NodePointer<Word> node_ptr,
 	                                         const NodeCoord<Word> &coord) {
@@ -183,15 +212,19 @@ public:
 		if (coord.level == m_config.GetNodeLevels() - 1)
 			return edit_leaf(editor, node_ptr, coord);
 
-		std::array<Word, 9> unpacked_node = node_ptr ? get_unpacked_node(read_node(*node_ptr)) : std::array<Word, 9>{};
+		std::array<Word, 9> unpacked_node = get_unpacked_node_array(node_ptr);
 		Word &child_mask = unpacked_node[0];
 		std::span<Word, 8> children = {unpacked_node.data() + 1};
+
+		bool changed = false;
 
 		for (Word i = 0; i < 8; ++i) {
 			NodePointer<Word> child_ptr = ((child_mask >> i) & 1u) ? children[i] : NodePointer<Word>::Null();
 			NodePointer<Word> new_child_ptr = edit(editor, child_ptr, coord.GetChildCoord(i));
 
 			if (new_child_ptr != child_ptr) {
+				changed = true;
+
 				children[i] = *new_child_ptr;
 				if (new_child_ptr)
 					child_mask |= (1u << i);
@@ -199,7 +232,10 @@ public:
 					child_mask &= ~(1u << i);
 			}
 		}
-		return upsert_inner_node(coord.level, get_packed_node_inplace(unpacked_node));
+
+		return changed ? (child_mask ? upsert_inner_node(coord.level, get_packed_node_inplace(unpacked_node))
+		                             : NodePointer<Word>::Null())
+		               : node_ptr;
 	}
 
 public:
