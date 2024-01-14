@@ -26,7 +26,10 @@ template <std::unsigned_integral Word> struct NodeConfig {
 	inline Word GetPagesPerBucket() const { return 1 << page_bits_per_bucket; }
 	inline Word GetWordsPerBucket() const { return 1 << (word_bits_per_page + page_bits_per_bucket); }
 	inline Word GetBucketsAtLevel(Word level) const { return 1 << bucket_bits_each_level[level]; }
-	inline Word GetLevelCount() const { return bucket_bits_each_level.size(); }
+	inline Word GetNodeLevels() const { return bucket_bits_each_level.size(); }
+	inline Word GetActualLevels() const {
+		return GetNodeLevels() + 2; // Plus 2 because leaf node is a 4^3 volume
+	}
 	inline Word GetTotalBuckets() const {
 		Word total_buckets = 0;
 		for (Word bucket_bits : bucket_bits_each_level)

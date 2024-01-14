@@ -76,42 +76,42 @@ TEST_SUITE("NodePool") {
 	TEST_CASE("Test upsert()") {
 		MurmurNodePool pool(4);
 		std::vector<uint32_t> node0 = {0b11u, 0x23, 0x45};
-		auto opt_idx = pool.UpsertNode(0, node0);
-		CHECK(opt_idx);
+		auto ptr = pool.upsert_inner_node(0, node0);
+		CHECK(ptr);
 
-		auto opt_idx2 = pool.UpsertNode(0, node0);
-		CHECK(opt_idx2);
-		CHECK_EQ(*opt_idx, *opt_idx2);
-		CHECK_EQ(pool.m_bucket_word_counts[*opt_idx / pool.GetNodeConfig().GetWordsPerBucket()], 3);
+		auto ptr2 = pool.upsert_inner_node(0, node0);
+		CHECK(ptr2);
+		CHECK_EQ(*ptr, *ptr2);
+		CHECK_EQ(pool.m_bucket_word_counts[*ptr / pool.GetNodeConfig().GetWordsPerBucket()], 3);
 
 		std::vector<uint32_t> node1 = {0b110u, 0x23, 0x44};
-		auto opt_idx3 = pool.UpsertNode(0, node1);
-		CHECK(opt_idx3);
-		CHECK_NE(*opt_idx, *opt_idx3);
+		auto ptr3 = pool.upsert_inner_node(0, node1);
+		CHECK(ptr3);
+		CHECK_NE(*ptr, *ptr3);
 
-		auto opt_idx4 = pool.UpsertNode(1, node1);
-		CHECK(opt_idx4);
-		CHECK_NE(*opt_idx4, *opt_idx3);
+		auto ptr4 = pool.upsert_inner_node(1, node1);
+		CHECK(ptr4);
+		CHECK_NE(*ptr4, *ptr3);
 
 		std::vector<uint32_t> node2 = {0b11111111u, 0x23, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0x01};
-		auto opt_idx5 = pool.UpsertNode(2, node2);
-		CHECK(opt_idx5);
-		CHECK_EQ(pool.m_bucket_word_counts[*opt_idx5 / pool.GetNodeConfig().GetWordsPerBucket()], 9);
+		auto ptr5 = pool.upsert_inner_node(2, node2);
+		CHECK(ptr5);
+		CHECK_EQ(pool.m_bucket_word_counts[*ptr5 / pool.GetNodeConfig().GetWordsPerBucket()], 9);
 
 		std::array<uint32_t, 2> leaf0 = {0x23, 0x55};
-		auto opt_idx6 = pool.UpsertLeaf(3, leaf0);
-		CHECK(opt_idx6);
-		CHECK_EQ(pool.m_bucket_word_counts[*opt_idx6 / pool.GetNodeConfig().GetWordsPerBucket()], 2);
+		auto ptr6 = pool.upsert_leaf(3, leaf0);
+		CHECK(ptr6);
+		CHECK_EQ(pool.m_bucket_word_counts[*ptr6 / pool.GetNodeConfig().GetWordsPerBucket()], 2);
 	}
 	TEST_CASE("Test upsert() bucket full") {
 		ZeroNodePool pool(4);
 		uint32_t cnt = 0;
 		while (true) {
 			std::vector<uint32_t> node = {0b11u, cnt, 0x45};
-			auto opt_idx = pool.UpsertNode(0, node);
-			if (!opt_idx)
+			auto ptr = pool.upsert_inner_node(0, node);
+			if (!ptr)
 				break;
-			CHECK(((*opt_idx % pool.GetNodeConfig().GetWordsPerPage()) % 3 == 0));
+			CHECK(((*ptr % pool.GetNodeConfig().GetWordsPerPage()) % 3 == 0));
 			++cnt;
 		}
 		CHECK_EQ(cnt, (pool.GetNodeConfig().GetWordsPerPage() / 3) * pool.GetNodeConfig().GetPagesPerBucket());
