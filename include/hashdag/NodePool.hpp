@@ -241,10 +241,7 @@ public:
 public:
 	inline explicit NodePoolBase(NodeConfig<Word> config) : m_config{std::move(config)} {
 		m_bucket_word_counts.resize(m_config.GetTotalBuckets());
-
-		m_bucket_level_bases.resize(m_config.GetNodeLevels());
-		for (Word i = 1; i < m_config.GetNodeLevels(); ++i)
-			m_bucket_level_bases[i] = m_config.GetBucketsAtLevel(i - 1) + m_bucket_level_bases[i - 1];
+		m_bucket_level_bases = m_config.GetLevelBaseBucketIndices();
 	}
 	inline const auto &GetNodeConfig() const { return m_config; }
 };

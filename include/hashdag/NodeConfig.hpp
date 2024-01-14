@@ -36,6 +36,12 @@ template <std::unsigned_integral Word> struct NodeConfig {
 			total_buckets += (1u << bucket_bits);
 		return total_buckets;
 	}
+	inline std::vector<Word> GetLevelBaseBucketIndices() const {
+		std::vector<Word> base_bucket_indices(bucket_bits_each_level.size());
+		for (Word i = 1; i < bucket_bits_each_level.size(); ++i)
+			base_bucket_indices[i] = GetBucketsAtLevel(i - 1) + base_bucket_indices[i - 1];
+		return base_bucket_indices;
+	}
 	inline Word GetTotalPages() const { return GetTotalBuckets() << page_bits_per_bucket; }
 	inline Word GetTotalWords() const { return GetTotalBuckets() << (word_bits_per_page + page_bits_per_bucket); }
 
