@@ -78,8 +78,8 @@ struct ZeroNodePool final : public hashdag::NodePoolBase<ZeroNodePool, uint32_t,
 
 	inline explicit ZeroNodePool(uint32_t level_count)
 	    : hashdag::NodePoolBase<ZeroNodePool, uint32_t, ZeroHasher>(
-	          hashdag::NodeConfig<uint32_t>::MakeDefault(level_count)) {
-		memory.resize(GetNodeConfig().GetTotalBuckets() * GetNodeConfig().GetWordsPerBucket());
+	          hashdag::Config<uint32_t>::MakeDefault(level_count)) {
+		memory.resize(GetConfig().GetTotalBuckets() * GetConfig().GetWordsPerBucket());
 	}
 
 	inline uint32_t GetBucketWords(uint32_t bucket_id) const {
@@ -88,12 +88,12 @@ struct ZeroNodePool final : public hashdag::NodePoolBase<ZeroNodePool, uint32_t,
 	}
 	inline void SetBucketWords(uint32_t bucket_id, uint32_t words) { bucket_words[bucket_id] = words; }
 	inline const uint32_t *ReadPage(uint32_t page_id) const {
-		return memory.data() + (page_id << GetNodeConfig().word_bits_per_page);
+		return memory.data() + (page_id << GetConfig().word_bits_per_page);
 	}
 	inline void ZeroPage(uint32_t page_id, uint32_t page_offset, uint32_t zero_words) {}
 	inline void WritePage(uint32_t page_id, uint32_t page_offset, std::span<const uint32_t> word_span) {
 		std::copy(word_span.begin(), word_span.end(),
-		          memory.data() + ((page_id << GetNodeConfig().word_bits_per_page) | page_offset));
+		          memory.data() + ((page_id << GetConfig().word_bits_per_page) | page_offset));
 	}
 };
 struct MurmurNodePool final : public hashdag::NodePoolBase<MurmurNodePool, uint32_t, MurmurHasher> {
@@ -102,8 +102,8 @@ struct MurmurNodePool final : public hashdag::NodePoolBase<MurmurNodePool, uint3
 
 	inline explicit MurmurNodePool(uint32_t level_count)
 	    : hashdag::NodePoolBase<MurmurNodePool, uint32_t, MurmurHasher>(
-	          hashdag::NodeConfig<uint32_t>::MakeDefault(level_count)) {
-		memory.resize(GetNodeConfig().GetTotalWords());
+	          hashdag::Config<uint32_t>::MakeDefault(level_count)) {
+		memory.resize(GetConfig().GetTotalWords());
 	}
 
 	inline uint32_t GetBucketWords(uint32_t bucket_id) const {
@@ -112,12 +112,12 @@ struct MurmurNodePool final : public hashdag::NodePoolBase<MurmurNodePool, uint3
 	}
 	inline void SetBucketWords(uint32_t bucket_id, uint32_t words) { bucket_words[bucket_id] = words; }
 	inline const uint32_t *ReadPage(uint32_t page_id) const {
-		return memory.data() + (page_id << GetNodeConfig().word_bits_per_page);
+		return memory.data() + (page_id << GetConfig().word_bits_per_page);
 	}
 	inline void ZeroPage(uint32_t page_id, uint32_t page_offset, uint32_t zero_words) {}
 	inline void WritePage(uint32_t page_id, uint32_t page_offset, std::span<const uint32_t> word_span) {
 		std::copy(word_span.begin(), word_span.end(),
-		          memory.data() + ((page_id << GetNodeConfig().word_bits_per_page) | page_offset));
+		          memory.data() + ((page_id << GetConfig().word_bits_per_page) | page_offset));
 	}
 };
 
@@ -131,7 +131,7 @@ TEST_SUITE("NodePool") {
 		auto ptr2 = pool.upsert_inner_node(0, node0, {});
 		CHECK(ptr2);
 		CHECK_EQ(*ptr, *ptr2);
-		CHECK_EQ(pool.bucket_words[*ptr / pool.GetNodeConfig().GetWordsPerBucket()], 3);
+		CHECK_EQ(pool.bucket_words[*ptr / pool.GetConfig().GetWordsPerBucket()], 3);
 
 		std::vector<uint32_t> node1 = {0b110u, 0x23, 0x44};
 		auto ptr3 = pool.upsert_inner_node(0, node1, {});
@@ -145,12 +145,12 @@ TEST_SUITE("NodePool") {
 		std::vector<uint32_t> node2 = {0b11111111u, 0x23, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0x01};
 		auto ptr5 = pool.upsert_inner_node(2, node2, {});
 		CHECK(ptr5);
-		CHECK_EQ(pool.bucket_words[*ptr5 / pool.GetNodeConfig().GetWordsPerBucket()], 9);
+		CHECK_EQ(pool.bucket_words[*ptr5 / pool.GetConfig().GetWordsPerBucket()], 9);
 
 		std::array<uint32_t, 2> leaf0 = {0x23, 0x55};
 		auto ptr6 = pool.upsert_leaf(3, leaf0, {});
 		CHECK(ptr6);
-		CHECK_EQ(pool.bucket_words[*ptr6 / pool.GetNodeConfig().GetWordsPerBucket()], 2);
+		CHECK_EQ(pool.bucket_words[*ptr6 / pool.GetConfig().GetWordsPerBucket()], 2);
 	}
 	TEST_CASE("Test upsert() bucket full") {
 		ZeroNodePool pool(4);
@@ -160,49 +160,49 @@ TEST_SUITE("NodePool") {
 			auto ptr = pool.upsert_inner_node(0, node, {});
 			if (!ptr)
 				break;
-			CHECK(((*ptr % pool.GetNodeConfig().GetWordsPerPage()) % 3 == 0));
+			CHECK(((*ptr % pool.GetConfig().GetWordsPerPage()) % 3 == 0));
 			++cnt;
 		}
-		CHECK_EQ(cnt, (pool.GetNodeConfig().GetWordsPerPage() / 3) * pool.GetNodeConfig().GetPagesPerBucket());
+		CHECK_EQ(cnt, (pool.GetConfig().GetWordsPerPage() / 3) * pool.GetConfig().GetPagesPerBucket());
 	}
 	TEST_CASE("Test Edit() and Iterate()") {
 		MurmurNodePool pool(4);
 		SingleIterator iter{};
 		auto root = pool.Edit(
-		    {}, AABBEditor{.level = pool.GetNodeConfig().GetLowestLevel(), .aabb_min = {}, .aabb_max{4, 4, 4}});
+		    {}, AABBEditor{.level = pool.GetConfig().GetLowestLevel(), .aabb_min = {}, .aabb_max{4, 4, 4}});
 		CHECK(root);
 		CHECK_EQ(pool.bucket_words.size(), 4);
 
 		auto root2 = pool.Edit(
-		    root, AABBEditor{.level = pool.GetNodeConfig().GetLowestLevel(), .aabb_min = {}, .aabb_max{4, 4, 4}});
+		    root, AABBEditor{.level = pool.GetConfig().GetLowestLevel(), .aabb_min = {}, .aabb_max{4, 4, 4}});
 		CHECK(root2);
 		CHECK_EQ(root, root2);
 
-		iter = SingleIterator{.level = pool.GetNodeConfig().GetLowestLevel(), .pos = {3, 3, 3}, .exist = false};
+		iter = SingleIterator{.level = pool.GetConfig().GetLowestLevel(), .pos = {3, 3, 3}, .exist = false};
 		pool.Iterate(root2, &iter);
 		CHECK(iter.exist);
 
-		iter = SingleIterator{.level = pool.GetNodeConfig().GetLowestLevel(), .pos = {4, 3, 3}, .exist = false};
+		iter = SingleIterator{.level = pool.GetConfig().GetLowestLevel(), .pos = {4, 3, 3}, .exist = false};
 		pool.Iterate(root2, &iter);
 		CHECK(!iter.exist);
 
-		iter = SingleIterator{.level = pool.GetNodeConfig().GetLowestLevel(), .pos = {3, 3, 3}, .exist = false};
+		iter = SingleIterator{.level = pool.GetConfig().GetLowestLevel(), .pos = {3, 3, 3}, .exist = false};
 		pool.Iterate({}, &iter);
 		CHECK(!iter.exist);
 
 		auto root3 = pool.Edit(
 		    root2,
-		    AABBEditor{.level = pool.GetNodeConfig().GetLowestLevel(), .aabb_min = {1, 1, 1}, .aabb_max{5, 5, 5}});
+		    AABBEditor{.level = pool.GetConfig().GetLowestLevel(), .aabb_min = {1, 1, 1}, .aabb_max{5, 5, 5}});
 		CHECK(root3);
 		CHECK_NE(root, root3);
 
 		auto root4 = pool.Edit(
 		    root3,
-		    AABBEditor{.level = pool.GetNodeConfig().GetLowestLevel(), .aabb_min = {1, 2, 3}, .aabb_max{3, 5, 5}});
+		    AABBEditor{.level = pool.GetConfig().GetLowestLevel(), .aabb_min = {1, 2, 3}, .aabb_max{3, 5, 5}});
 		CHECK(root4);
 		CHECK_EQ(root3, root4);
 
-		iter = SingleIterator{.level = pool.GetNodeConfig().GetLowestLevel(), .pos = {4, 3, 3}, .exist = false};
+		iter = SingleIterator{.level = pool.GetConfig().GetLowestLevel(), .pos = {4, 3, 3}, .exist = false};
 		pool.Iterate(root4, &iter);
 		CHECK(iter.exist);
 	}

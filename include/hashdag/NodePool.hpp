@@ -6,9 +6,9 @@
 #ifndef VKHASHDAG_NODEPOOL_HPP
 #define VKHASHDAG_NODEPOOL_HPP
 
+#include "Config.hpp"
 #include "Editor.hpp"
 #include "Iterator.hpp"
-#include "NodeConfig.hpp"
 #include "NodeCoord.hpp"
 
 #include <array>
@@ -54,7 +54,7 @@ private:
 #else
 public:
 #endif
-	NodeConfig<Word> m_config;
+	Config<Word> m_config;
 	std::vector<Word> m_bucket_level_bases;
 
 	inline const Word *read_page(Word page_id) const { return static_cast<const Derived *>(this)->ReadPage(page_id); }
@@ -164,9 +164,9 @@ public:
 		};
 		return upsert_node(get_node_words, level, node_span, fallback_ptr);
 	}
-	inline NodePointer<Word> upsert_leaf(Word level, std::span<const Word, NodeConfig<Word>::kWordsPerLeaf> leaf_span,
+	inline NodePointer<Word> upsert_leaf(Word level, std::span<const Word, Config<Word>::kWordsPerLeaf> leaf_span,
 	                                     NodePointer<Word> fallback_ptr) {
-		const auto get_node_words = [](auto) { return NodeConfig<Word>::kWordsPerLeaf; };
+		const auto get_node_words = [](auto) { return Config<Word>::kWordsPerLeaf; };
 		return upsert_node(get_node_words, level, leaf_span, fallback_ptr);
 	}
 
@@ -198,17 +198,17 @@ public:
 
 		return unpacked_node;
 	}
-	inline std::array<Word, NodeConfig<Word>::kWordsPerLeaf> get_leaf_array(NodePointer<Word> leaf_ptr) const {
+	inline std::array<Word, Config<Word>::kWordsPerLeaf> get_leaf_array(NodePointer<Word> leaf_ptr) const {
 		if (!leaf_ptr)
 			return {};
 		const Word *p_leaf = read_node(*leaf_ptr);
-		std::array<Word, NodeConfig<Word>::kWordsPerLeaf> leaf;
-		std::copy(p_leaf, p_leaf + NodeConfig<Word>::kWordsPerLeaf, leaf.data());
+		std::array<Word, Config<Word>::kWordsPerLeaf> leaf;
+		std::copy(p_leaf, p_leaf + Config<Word>::kWordsPerLeaf, leaf.data());
 		return leaf;
 	}
 	inline NodePointer<Word> edit_leaf(const Editor<Word> auto &editor, NodePointer<Word> leaf_ptr,
 	                                   const NodeCoord<Word> &coord) {
-		using LeafArray = std::array<Word, NodeConfig<Word>::kWordsPerLeaf>;
+		using LeafArray = std::array<Word, Config<Word>::kWordsPerLeaf>;
 
 		LeafArray leaf = get_leaf_array(leaf_ptr);
 
@@ -293,11 +293,11 @@ public:
 	}
 
 public:
-	inline explicit NodePoolBase(NodeConfig<Word> config) : m_config{std::move(config)} {
+	inline explicit NodePoolBase(Config<Word> config) : m_config{std::move(config)} {
 		static_assert(NodePool<Derived, Word>);
 		m_bucket_level_bases = m_config.GetLevelBaseBucketIndices();
 	}
-	inline const auto &GetNodeConfig() const { return m_config; }
+	inline const auto &GetConfig() const { return m_config; }
 	inline NodePointer<Word> Edit(NodePointer<Word> root_ptr, const Editor<Word> auto &editor) {
 		return edit_inner_node(editor, root_ptr, {});
 	}
