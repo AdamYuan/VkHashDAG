@@ -17,6 +17,16 @@
 
 namespace hashdag {
 
+template <typename T, typename Word>
+concept NodePool = requires(T e, const T ce) {
+	{ ce.ReadPage(Word{} /* Page Index */) } -> std::convertible_to<const Word *>;
+	e.WritePage(Word{} /* Page Index */, Word{} /* Offset */, std::span<const Word>{} /* Content */);
+	e.ZeroPage(Word{} /* Page Index */, Word{} /* Offset */, Word{} /* Length */);
+
+	{ ce.GetBucketWords(Word{} /* Bucket Index */) } -> std::convertible_to<Word>;
+	e.SetBucketWords(Word{} /* Bucket Index */, Word{} /* Words */);
+};
+
 template <std::unsigned_integral Word> class NodePointer {
 private:
 	Word m_node;
@@ -41,17 +51,24 @@ private:
 public:
 #endif
 	NodeConfig<Word> m_config;
-	std::vector<Word> m_bucket_level_bases, m_bucket_word_counts;
+	std::vector<Word> m_bucket_level_bases;
 
 	inline const Word *read_page(Word page_id) const { return static_cast<const Derived *>(this)->ReadPage(page_id); }
-	inline const Word *read_node(Word node) const {
-		return read_page(node >> m_config.word_bits_per_page) + (node & (m_config.GetWordsPerPage() - 1u));
-	}
 	inline void zero_page(Word page_id, Word page_offset, Word zero_words) {
 		static_cast<Derived *>(this)->ZeroPage(page_id, page_offset, zero_words);
 	}
 	inline void write_page(Word page_id, Word page_offset, std::span<const Word> word_span) {
 		static_cast<Derived *>(this)->WritePage(page_id, page_offset, word_span);
+	}
+	inline Word get_bucket_words(Word bucket_id) const {
+		return static_cast<const Derived *>(this)->GetBucketWords(bucket_id);
+	}
+	inline void set_bucket_words(Word bucket_id, Word words) {
+		return static_cast<Derived *>(this)->SetBucketWords(bucket_id, words);
+	}
+
+	inline const Word *read_node(Word node) const {
+		return read_page(node >> m_config.word_bits_per_page) + (node & (m_config.GetWordsPerPage() - 1u));
 	}
 
 	template <size_t NodeSpanExtent>
@@ -72,7 +89,7 @@ public:
 	                                     std::span<const Word, NodeSpanExtent> node_span) {
 		const Word bucket_index =
 		    m_bucket_level_bases[level] + (WordSpanHasher{}(node_span) & (m_config.GetBucketsAtLevel(level) - 1));
-		const Word bucket_words = m_bucket_word_counts[bucket_index];
+		const Word bucket_words = get_bucket_words(bucket_index);
 		const Word bucket_page_index = bucket_index << m_config.page_bits_per_bucket;
 
 		// Find Node in the bucket
@@ -117,8 +134,7 @@ public:
 			}
 
 			write_page(dst_page_index, dst_page_offset, node_span);
-			m_bucket_word_counts[bucket_index] =
-			    ((dst_page_slot << m_config.word_bits_per_page) | dst_page_offset) + node_span.size();
+			set_bucket_words(bucket_index, ((dst_page_slot << m_config.word_bits_per_page) | dst_page_offset) + node_span.size());
 
 			return (dst_page_index << m_config.word_bits_per_page) | dst_page_offset;
 		}
@@ -240,7 +256,7 @@ public:
 
 public:
 	inline explicit NodePoolBase(NodeConfig<Word> config) : m_config{std::move(config)} {
-		m_bucket_word_counts.resize(m_config.GetTotalBuckets());
+		static_assert(NodePool<Derived, Word>);
 		m_bucket_level_bases = m_config.GetLevelBaseBucketIndices();
 	}
 	inline const auto &GetNodeConfig() const { return m_config; }

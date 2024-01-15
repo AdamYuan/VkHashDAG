@@ -2,6 +2,7 @@
 #include "doctest.h"
 
 #include <hashdag/NodePool.hpp>
+#include <unordered_map>
 
 struct ZeroHasher {
 	inline uint32_t operator()(std::span<const uint32_t> word_span) const { return 0; }
@@ -39,12 +40,19 @@ struct MurmurHasher {
 
 struct ZeroNodePool final : public hashdag::NodePoolBase<ZeroNodePool, uint32_t, ZeroHasher> {
 	std::vector<uint32_t> memory;
+	std::unordered_map<uint32_t, uint32_t> bucket_words;
+
 	inline explicit ZeroNodePool(uint32_t level_count)
 	    : hashdag::NodePoolBase<ZeroNodePool, uint32_t, ZeroHasher>(
 	          hashdag::NodeConfig<uint32_t>::MakeDefault(level_count)) {
 		memory.resize(GetNodeConfig().GetTotalBuckets() * GetNodeConfig().GetWordsPerBucket());
 	}
 
+	inline uint32_t GetBucketWords(uint32_t bucket_id) const {
+		auto it = bucket_words.find(bucket_id);
+		return it == bucket_words.end() ? 0 : it->second;
+	}
+	inline void SetBucketWords(uint32_t bucket_id, uint32_t words) { bucket_words[bucket_id] = words; }
 	inline const uint32_t *ReadPage(uint32_t page_id) const {
 		return memory.data() + (page_id << GetNodeConfig().word_bits_per_page);
 	}
@@ -56,12 +64,19 @@ struct ZeroNodePool final : public hashdag::NodePoolBase<ZeroNodePool, uint32_t,
 };
 struct MurmurNodePool final : public hashdag::NodePoolBase<MurmurNodePool, uint32_t, MurmurHasher> {
 	std::vector<uint32_t> memory;
+	std::unordered_map<uint32_t, uint32_t> bucket_words;
+
 	inline explicit MurmurNodePool(uint32_t level_count)
 	    : hashdag::NodePoolBase<MurmurNodePool, uint32_t, MurmurHasher>(
 	          hashdag::NodeConfig<uint32_t>::MakeDefault(level_count)) {
 		memory.resize(GetNodeConfig().GetTotalWords());
 	}
 
+	inline uint32_t GetBucketWords(uint32_t bucket_id) const {
+		auto it = bucket_words.find(bucket_id);
+		return it == bucket_words.end() ? 0 : it->second;
+	}
+	inline void SetBucketWords(uint32_t bucket_id, uint32_t words) { bucket_words[bucket_id] = words; }
 	inline const uint32_t *ReadPage(uint32_t page_id) const {
 		return memory.data() + (page_id << GetNodeConfig().word_bits_per_page);
 	}
@@ -82,7 +97,7 @@ TEST_SUITE("NodePool") {
 		auto ptr2 = pool.upsert_inner_node(0, node0);
 		CHECK(ptr2);
 		CHECK_EQ(*ptr, *ptr2);
-		CHECK_EQ(pool.m_bucket_word_counts[*ptr / pool.GetNodeConfig().GetWordsPerBucket()], 3);
+		CHECK_EQ(pool.bucket_words[*ptr / pool.GetNodeConfig().GetWordsPerBucket()], 3);
 
 		std::vector<uint32_t> node1 = {0b110u, 0x23, 0x44};
 		auto ptr3 = pool.upsert_inner_node(0, node1);
@@ -96,12 +111,12 @@ TEST_SUITE("NodePool") {
 		std::vector<uint32_t> node2 = {0b11111111u, 0x23, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0x01};
 		auto ptr5 = pool.upsert_inner_node(2, node2);
 		CHECK(ptr5);
-		CHECK_EQ(pool.m_bucket_word_counts[*ptr5 / pool.GetNodeConfig().GetWordsPerBucket()], 9);
+		CHECK_EQ(pool.bucket_words[*ptr5 / pool.GetNodeConfig().GetWordsPerBucket()], 9);
 
 		std::array<uint32_t, 2> leaf0 = {0x23, 0x55};
 		auto ptr6 = pool.upsert_leaf(3, leaf0);
 		CHECK(ptr6);
-		CHECK_EQ(pool.m_bucket_word_counts[*ptr6 / pool.GetNodeConfig().GetWordsPerBucket()], 2);
+		CHECK_EQ(pool.bucket_words[*ptr6 / pool.GetNodeConfig().GetWordsPerBucket()], 2);
 	}
 	TEST_CASE("Test upsert() bucket full") {
 		ZeroNodePool pool(4);
