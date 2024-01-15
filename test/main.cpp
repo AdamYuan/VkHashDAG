@@ -53,8 +53,8 @@ struct AABBEditor {
 		if (coord.pos.All(std::greater_equal<uint32_t>{}, aabb_min) && coord.pos.All(std::less<uint32_t>{}, aabb_max))
 		    printf("(%d %d %d)\n", coord.pos.x, coord.pos.y, coord.pos.z); */
 		CHECK_EQ(coord.level, level);
-		return coord.pos.All(std::greater_equal<uint32_t>{}, aabb_min) &&
-		       coord.pos.All(std::less<uint32_t>{}, aabb_max);
+		return voxel || coord.pos.All(std::greater_equal<uint32_t>{}, aabb_min) &&
+		                    coord.pos.All(std::less<uint32_t>{}, aabb_max);
 	}
 };
 
@@ -168,5 +168,11 @@ TEST_SUITE("NodePool") {
 		    AABBEditor{.level = pool.GetNodeConfig().GetLowestLevel(), .aabb_min = {1, 1, 1}, .aabb_max{5, 5, 5}});
 		CHECK(root3);
 		CHECK_NE(root, root3);
+
+		auto root4 = pool.Edit(
+		    root3,
+		    AABBEditor{.level = pool.GetNodeConfig().GetLowestLevel(), .aabb_min = {1, 2, 3}, .aabb_max{3, 5, 5}});
+		CHECK(root4);
+		CHECK_EQ(root3, root4);
 	}
 }

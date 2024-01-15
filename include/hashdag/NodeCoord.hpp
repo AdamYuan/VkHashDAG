@@ -1,24 +1,15 @@
 //
-// Created by adamyuan on 1/14/24.
+// Created by adamyuan on 1/15/24.
 //
 
 #pragma once
-#ifndef VKHASHDAG_POSITION_HPP
-#define VKHASHDAG_POSITION_HPP
+#ifndef VKHASHDAG_NODECOORD_HPP
+#define VKHASHDAG_NODECOORD_HPP
 
+#include "Vec3.hpp"
 #include <concepts>
 
 namespace hashdag {
-
-template <typename Type> struct Vec3 {
-	Type x, y, z;
-	inline bool Any(auto &&compare, const Vec3 &r) const {
-		return compare(x, r.x) || compare(y, r.y) || compare(z, r.z);
-	}
-	inline bool All(auto &&compare, const Vec3 &r) const {
-		return compare(x, r.x) && compare(y, r.y) && compare(z, r.z);
-	}
-};
 
 template <std::unsigned_integral Word> struct NodeCoord {
 	Word level;
@@ -86,4 +77,4 @@ template <std::unsigned_integral Word> struct NodeCoord {
 
 } // namespace hashdag
 
-#endif // VKHASHDAG_POSITION_HPP
+#endif // VKHASHDAG_NODECOORD_HPP

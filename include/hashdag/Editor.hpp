@@ -6,7 +6,7 @@
 #ifndef VKHASHDAG_EDITOR_HPP
 #define VKHASHDAG_EDITOR_HPP
 
-#include "Position.hpp"
+#include "NodeCoord.hpp"
 #include <concepts>
 
 namespace hashdag {

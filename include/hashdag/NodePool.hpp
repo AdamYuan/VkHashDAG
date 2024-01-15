@@ -7,8 +7,9 @@
 #define VKHASHDAG_NODEPOOL_HPP
 
 #include "Editor.hpp"
+#include "Iterator.hpp"
 #include "NodeConfig.hpp"
-#include "Position.hpp"
+#include "NodeCoord.hpp"
 
 #include <array>
 #include <bit>
@@ -169,15 +170,18 @@ public:
 		return upsert_node(get_node_words, level, leaf_span, fallback_ptr);
 	}
 
-	inline static std::span<const Word> get_packed_node_inplace(std::span<Word, 9> unpacked_node) {
-		Word child_mask = unpacked_node.front();
-		Word *p_children = unpacked_node.data() + 1, *p_next_child = p_children;
-
+	inline static void foreach_child_index(Word child_mask, auto &&func) {
 		while (child_mask) {
 			Word child_idx = std::countr_zero(child_mask);
 			child_mask ^= 1 << child_idx;
-			*(p_next_child++) = p_children[child_idx];
+			func(child_idx);
 		}
+	}
+
+	inline static std::span<const Word> get_packed_node_inplace(std::span<Word, 9> unpacked_node) {
+		Word child_mask = unpacked_node.front();
+		Word *p_children = unpacked_node.data() + 1, *p_next_child = p_children;
+		foreach_child_index(child_mask, [&](Word child_idx) { *(p_next_child++) = p_children[child_idx]; });
 		return std::span<const Word>{unpacked_node.data(), p_next_child};
 	}
 	inline std::array<Word, 9> get_unpacked_node_array(NodePointer<Word> node_ptr) const {
@@ -190,11 +194,8 @@ public:
 		std::array<Word, 9> unpacked_node = {child_mask};
 		Word *p_children = unpacked_node.data() + 1;
 
-		while (child_mask) {
-			Word child_idx = std::countr_zero(child_mask);
-			child_mask ^= 1 << child_idx;
-			p_children[child_idx] = *(p_next_child++);
-		}
+		foreach_child_index(child_mask, [&](Word child_idx) { p_children[child_idx] = *(p_next_child++); });
+
 		return unpacked_node;
 	}
 	inline std::array<Word, NodeConfig<Word>::kWordsPerLeaf> get_leaf_array(NodePointer<Word> leaf_ptr) const {
@@ -251,16 +252,44 @@ public:
 				changed = true;
 
 				children[i] = *new_child_ptr;
-				if (new_child_ptr)
-					child_mask |= (1u << i);
-				else
-					child_mask &= ~(1u << i);
+				child_mask ^= (Word{bool(new_child_ptr) != bool(child_ptr)} << i); // Flip if occurrence changed
 			}
 		}
 
 		return changed ? (child_mask ? upsert_inner_node(coord.level, get_packed_node_inplace(unpacked_node), node_ptr)
 		                             : NodePointer<Word>::Null())
 		               : node_ptr;
+	}
+
+	inline void iterate_leaf(Iterator<Word> auto *p_iterator, NodePointer<Word> leaf_ptr,
+	                         const NodeCoord<Word> &coord) const {
+		if (!leaf_ptr)
+			return;
+		const Word *p_leaf = read_node(*leaf_ptr);
+		for (Word i = 0; i < 64; ++i) {
+			constexpr Word kWordBits = std::countr_zero(sizeof(Word) * 8), kWordMask = (1u << kWordBits) - 1u;
+			bool voxel = (p_leaf[i >> kWordBits] >> (i & kWordMask)) & 1u;
+			if (voxel)
+				p_iterator->Iterate(coord.GetLeafCoord(i));
+		}
+	}
+	inline void iterate_inner_node(Iterator<Word> auto *p_iterator, NodePointer<Word> node_ptr,
+	                               const NodeCoord<Word> &coord) const {
+		if (!node_ptr || !p_iterator->IsAffected(coord))
+			return;
+
+		if (coord.level == m_config.GetNodeLevels() - 1) {
+			iterate_leaf(p_iterator, node_ptr, coord);
+			return;
+		}
+
+		const Word *p_node = read_node(*node_ptr);
+		Word child_mask = *p_node;
+		const Word *p_next_child = p_node + 1;
+
+		foreach_child_index(child_mask, [&](Word child_idx) {
+			iterate_inner_node(p_iterator, *(p_next_child++), coord.GetChildCoord(child_idx));
+		});
 	}
 
 public:
@@ -271,6 +300,9 @@ public:
 	inline const auto &GetNodeConfig() const { return m_config; }
 	inline NodePointer<Word> Edit(NodePointer<Word> root_ptr, const Editor<Word> auto &editor) {
 		return edit_inner_node(editor, root_ptr, {});
+	}
+	inline void Iterate(NodePointer<Word> root_ptr, Iterator<Word> auto *p_iterator) const {
+		iterate_inner_node(p_iterator, root_ptr, {});
 	}
 };
 
