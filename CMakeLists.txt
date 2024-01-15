@@ -34,7 +34,7 @@ add_subdirectory(shader)
 add_executable(VkHashDAG
         src/main.cpp
         src/GPSQueueSelector.cpp
-        src/NodePool.cpp
+        src/DAGNodePool.cpp
 )
 target_include_directories(VkHashDAG PRIVATE include)
 

@@ -2,11 +2,11 @@
 // Created by adamyuan on 1/15/24.
 //
 
-#include "NodePool.hpp"
+#include "DAGNodePool.hpp"
 
 #include <unordered_set>
 
-void NodePool::create_buffer() {
+void DAGNodePool::create_buffer() {
 	m_gpu_buffer_size = (VkDeviceSize)GetConfig().GetTotalWords() * sizeof(uint32_t);
 
 	VkBufferCreateInfo create_info = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
@@ -25,7 +25,7 @@ void NodePool::create_buffer() {
 
 	vkCreateBuffer(m_device_ptr->GetHandle(), &create_info, nullptr, &m_gpu_buffer);
 }
-void NodePool::destroy_buffer() {
+void DAGNodePool::destroy_buffer() {
 	std::vector<VmaAllocation> allocations;
 	for (const auto &gpu_page : m_gpu_pages)
 		if (gpu_page.allocation != VK_NULL_HANDLE)
@@ -36,7 +36,7 @@ void NodePool::destroy_buffer() {
 	vkDestroyBuffer(m_device_ptr->GetHandle(), m_gpu_buffer, nullptr);
 }
 
-void NodePool::Flush(const myvk::SemaphoreGroup &wait_semaphores, const myvk::SemaphoreGroup &signal_semaphores,
+void DAGNodePool::Flush(const myvk::SemaphoreGroup &wait_semaphores, const myvk::SemaphoreGroup &signal_semaphores,
                      const myvk::Ptr<myvk::Fence> &fence) {
 	std::unordered_set<uint32_t> missing_gpu_page_indices;
 	for (const auto &it : m_gpu_write_ranges) {
@@ -51,7 +51,6 @@ void NodePool::Flush(const myvk::SemaphoreGroup &wait_semaphores, const myvk::Se
 
 		VmaAllocationCreateInfo create_info = {};
 		create_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-		// create_info.preferredFlags = VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 		create_info.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
 		vmaAllocateMemoryPages(m_device_ptr->GetAllocatorHandle(), &m_gpu_page_memory_requirements, &create_info,
@@ -79,7 +78,7 @@ void NodePool::Flush(const myvk::SemaphoreGroup &wait_semaphores, const myvk::Se
 
 			m_gpu_pages[gpu_page_id] = {
 			    .allocation = allocations[counter],
-			    .info = allocation_info,
+			    .p_mapped_data = (uint32_t *)allocation_info.pMappedData,
 			};
 
 			VkDeviceSize resource_offset = gpu_page_id * m_gpu_page_memory_requirements.size;
@@ -101,12 +100,11 @@ void NodePool::Flush(const myvk::SemaphoreGroup &wait_semaphores, const myvk::Se
 	for (const auto &it : m_gpu_write_ranges) {
 		uint32_t page_id = it.first, gpu_page_id = page_id >> m_page_bits_per_gpu_page;
 		const Range &range = it.second;
-		uint32_t gpu_page_offset =
-		    ((page_id & ((1u << m_page_bits_per_gpu_page) - 1)) << GetConfig().word_bits_per_page) | range.begin;
 
 		const auto &gpu_page = m_gpu_pages[gpu_page_id];
-
-		auto p_mapped = (uint32_t *)gpu_page.info.pMappedData;
-		std::copy(m_pages[page_id].get() + range.begin, m_pages[page_id].get() + range.end, p_mapped + gpu_page_offset);
+		uint32_t gpu_page_offset =
+		    ((page_id & ((1u << m_page_bits_per_gpu_page) - 1)) << GetConfig().word_bits_per_page) | range.begin;
+		std::copy(m_pages[page_id].get() + range.begin, m_pages[page_id].get() + range.end,
+		          gpu_page.p_mapped_data + gpu_page_offset);
 	}
 }

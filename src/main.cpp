@@ -5,8 +5,8 @@
 #include <myvk/Instance.hpp>
 #include <myvk/Queue.hpp>
 
+#include "DAGNodePool.hpp"
 #include "GPSQueueSelector.hpp"
-#include "NodePool.hpp"
 
 constexpr uint32_t kFrameCount = 3;
 
@@ -58,15 +58,16 @@ int main() {
 		render_pass = myvk::RenderPass::Create(device, state);
 	}
 
-	auto node_pool =
-	    myvk::MakePtr<NodePool>(generic_queue, sparse_queue, hashdag::Config<uint32_t>::MakeDefault(17, 9, 11, 0));
-	hashdag::NodePointer<uint32_t> root = node_pool->Edit({}, AABBEditor{
-	                                                              .level = node_pool->GetConfig().GetLowestLevel(),
-	                                                              .aabb_min = {0, 0, 0},
-	                                                              .aabb_max = {4, 4, 4},
-	                                                          });
+	auto dag_node_pool =
+	    myvk::MakePtr<DAGNodePool>(generic_queue, sparse_queue, hashdag::Config<uint32_t>::MakeDefault(17, 9, 11, 0));
+	hashdag::NodePointer<uint32_t> root =
+	    dag_node_pool->Edit({}, AABBEditor{
+	                                .level = dag_node_pool->GetConfig().GetLowestLevel(),
+	                                .aabb_min = {0, 0, 0},
+	                                .aabb_max = {4, 4, 4},
+	                            });
 	auto fence = myvk::Fence::Create(device);
-	node_pool->Flush({}, {}, fence);
+	dag_node_pool->Flush({}, {}, fence);
 
 	myvk::ImGuiInit(window, myvk::CommandPool::Create(generic_queue));
 
@@ -91,7 +92,7 @@ int main() {
 			uint32_t current_frame = frame_manager->GetCurrentFrame();
 			const auto &command_buffer = frame_manager->GetCurrentCommandBuffer();
 
-			command_buffer->Begin();
+			command_buffer->Begin(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
 
 			command_buffer->CmdBeginRenderPass(render_pass, {framebuffer},
 			                                   {frame_manager->GetCurrentSwapchainImageView()},
