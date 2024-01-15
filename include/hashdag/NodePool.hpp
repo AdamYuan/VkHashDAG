@@ -3,13 +3,15 @@
 //
 
 #pragma once
-#ifndef VKHASHDAG_NODEPOOL_HPP
-#define VKHASHDAG_NODEPOOL_HPP
+#ifndef VKHASHDAG_HASHDAG_NODEPOOL_HPP
+#define VKHASHDAG_HASHDAG_NODEPOOL_HPP
 
 #include "Config.hpp"
 #include "Editor.hpp"
+#include "Hasher.hpp"
 #include "Iterator.hpp"
 #include "NodeCoord.hpp"
+#include "NodePointer.hpp"
 
 #include <array>
 #include <bit>
@@ -28,27 +30,7 @@ concept NodePool = requires(T e, const T ce) {
 	e.SetBucketWords(Word{} /* Bucket Index */, Word{} /* Words */);
 };
 
-template <std::unsigned_integral Word> class NodePointer {
-private:
-	Word m_node;
-
-public:
-	inline NodePointer() : m_node(-1) {}
-	inline NodePointer(Word node) : m_node{node} {}
-
-	inline bool HasValue() const { return m_node != -1; }
-	inline operator bool() const { return HasValue(); }
-
-	inline bool operator==(NodePointer r) const { return m_node == r.m_node; }
-	inline bool operator!=(NodePointer r) const { return m_node != r.m_node; }
-
-	inline Word Value() const { return m_node; }
-	inline Word operator*() const { return Value(); }
-
-	inline static NodePointer Null() { return {}; }
-};
-
-template <typename Derived, std::unsigned_integral Word, typename WordSpanHasher> class NodePoolBase {
+template <typename Derived, std::unsigned_integral Word, Hasher<Word> WordSpanHasher> class NodePoolBase {
 #ifndef HASHDAG_TEST
 private:
 #else
@@ -293,6 +275,7 @@ public:
 	}
 
 public:
+	inline virtual ~NodePoolBase() = default;
 	inline explicit NodePoolBase(Config<Word> config) : m_config{std::move(config)} {
 		static_assert(NodePool<Derived, Word>);
 		m_bucket_level_bases = m_config.GetLevelBaseBucketIndices();
@@ -308,4 +291,4 @@ public:
 
 } // namespace hashdag
 
-#endif // VKHASHDAG_NODEPOOL_HPP
+#endif // VKHASHDAG_HASHDAG_NODEPOOL_HPP

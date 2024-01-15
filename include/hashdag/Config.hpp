@@ -28,17 +28,17 @@ template <std::unsigned_integral Word> struct Config {
 	inline Word GetNodeLevels() const { return bucket_bits_each_level.size(); }
 	inline Word GetLowestLevel() const { return GetNodeLevels() + 1u; }
 	inline Word GetResolution() const { return Word(1u) << GetLowestLevel(); }
-	inline Word GetTotalBuckets() const {
-		Word total_buckets = 0;
-		for (Word bucket_bits : bucket_bits_each_level)
-			total_buckets += (Word(1u) << bucket_bits);
-		return total_buckets;
-	}
 	inline std::vector<Word> GetLevelBaseBucketIndices() const {
 		std::vector<Word> base_bucket_indices(bucket_bits_each_level.size());
 		for (Word i = 1; i < bucket_bits_each_level.size(); ++i)
 			base_bucket_indices[i] = GetBucketsAtLevel(i - 1) + base_bucket_indices[i - 1];
 		return base_bucket_indices;
+	}
+	inline Word GetTotalBuckets() const {
+		Word total_buckets = 0;
+		for (Word bucket_bits : bucket_bits_each_level)
+			total_buckets += (Word(1u) << bucket_bits);
+		return total_buckets;
 	}
 	inline Word GetTotalPages() const { return GetTotalBuckets() << page_bits_per_bucket; }
 	inline Word GetTotalWords() const { return GetTotalBuckets() << (word_bits_per_page + page_bits_per_bucket); }
@@ -50,7 +50,7 @@ template <std::unsigned_integral Word> struct Config {
 		for (Word c : config.buckets_each_level)
 			bucket_count += 1ULL << c;
 		uint64_t total_words = bucket_count * config.GetWordsPerBucket();
-		return total_words - 1 <= uint64_t(Word(-1));
+		return total_words - 1 <= uint64_t(Word(-2));
 	}
 	inline static Config MakeDefault(uint32_t level_count, uint32_t top_level_count = 9,
 	                                 Word word_bits_per_page = 9,           // 512

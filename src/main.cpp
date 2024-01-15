@@ -5,20 +5,41 @@
 #include <myvk/Instance.hpp>
 #include <myvk/Queue.hpp>
 
+#include "GPSQueueSelector.hpp"
+#include "NodePool.hpp"
+
 constexpr uint32_t kFrameCount = 3;
+
+struct AABBEditor {
+	uint32_t level;
+	hashdag::Vec3<uint32_t> aabb_min, aabb_max;
+	inline bool IsAffected(const hashdag::NodeCoord<uint32_t> &coord) const {
+		auto lb = coord.GetLowerBoundAtLevel(level), ub = coord.GetUpperBoundAtLevel(level);
+		/* printf("(%d %d %d), (%d, %d, %d) -> %d\n", lb.x, lb.y, lb.z, ub.x, ub.y, ub.z,
+		       !ub.Any(std::less_equal<uint32_t>{}, aabb_min) && !lb.Any(std::greater_equal<uint32_t>{}, aabb_max)); */
+		return !ub.Any(std::less_equal<uint32_t>{}, aabb_min) && !lb.Any(std::greater_equal<uint32_t>{}, aabb_max);
+	}
+	inline bool Edit(const hashdag::NodeCoord<uint32_t> &coord, bool voxel) const {
+		/*if (coord.pos.All(std::greater_equal<uint32_t>{}, aabb_min) && coord.pos.All(std::less<uint32_t>{}, aabb_max))
+		    printf("(%d %d %d)\n", coord.pos.x, coord.pos.y, coord.pos.z);
+		*/
+		return voxel || coord.pos.All(std::greater_equal<uint32_t>{}, aabb_min) &&
+		                    coord.pos.All(std::less<uint32_t>{}, aabb_max);
+	}
+};
 
 int main() {
 	GLFWwindow *window = myvk::GLFWCreateWindow("Test", 640, 480, true);
 
 	myvk::Ptr<myvk::Device> device;
-	myvk::Ptr<myvk::Queue> generic_queue;
+	myvk::Ptr<myvk::Queue> generic_queue, sparse_queue;
 	myvk::Ptr<myvk::PresentQueue> present_queue;
 	{
 		auto instance = myvk::Instance::CreateWithGlfwExtensions();
 		auto surface = myvk::Surface::Create(instance, window);
 		auto physical_device = myvk::PhysicalDevice::Fetch(instance)[0];
 		device = myvk::Device::Create(
-		    physical_device, myvk::GenericPresentQueueSelector{&generic_queue, surface, &present_queue},
+		    physical_device, GPSQueueSelector{&generic_queue, &sparse_queue, surface, &present_queue},
 		    physical_device->GetDefaultFeatures(), {VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_SWAPCHAIN_EXTENSION_NAME});
 	}
 
@@ -37,14 +58,15 @@ int main() {
 		render_pass = myvk::RenderPass::Create(device, state);
 	}
 
-	/* std::vector<myvk::Ptr<myvk::Buffer>> buffers(1024);
-	for (auto &buffer : buffers) {
-	    buffer = myvk::Buffer::Create(device, 1024 * 1024, VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT,
-	                                  VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_AUTO);
-	    auto data = (uint32_t *)buffer->Map();
-	    data[0] = 123;
-	    buffer->Unmap();
-	} */
+	auto node_pool =
+	    myvk::MakePtr<NodePool>(generic_queue, sparse_queue, hashdag::Config<uint32_t>::MakeDefault(17, 9, 11, 0));
+	hashdag::NodePointer<uint32_t> root = node_pool->Edit({}, AABBEditor{
+	                                                              .level = node_pool->GetConfig().GetLowestLevel(),
+	                                                              .aabb_min = {0, 0, 0},
+	                                                              .aabb_max = {4, 4, 4},
+	                                                          });
+	auto fence = myvk::Fence::Create(device);
+	node_pool->Flush({}, {}, fence);
 
 	myvk::ImGuiInit(window, myvk::CommandPool::Create(generic_queue));
 

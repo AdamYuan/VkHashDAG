@@ -3,39 +3,10 @@
 
 #include <hashdag/NodePool.hpp>
 #include <unordered_map>
+#include <unordered_set>
 
 struct ZeroHasher {
-	inline uint32_t operator()(std::span<const uint32_t> word_span) const { return 0; }
-};
-
-struct MurmurHasher {
-	inline uint32_t operator()(std::span<const uint32_t> word_span) const {
-		uint32_t h = 0; // seed
-		for (uint32_t k : word_span) {
-			k *= 0xcc9e2d51;
-			k = (k << 15) | (k >> 17);
-			k *= 0x1b873593;
-			h ^= k;
-			h = (h << 13) | (h >> 19);
-			h = h * 5 + 0xe6546b64;
-		}
-		h ^= uint32_t(word_span.size());
-		h ^= h >> 16;
-		h *= 0x85ebca6b;
-		h ^= h >> 13;
-		h *= 0xc2b2ae35;
-		h ^= h >> 16;
-		return h;
-	}
-	inline uint32_t operator()(std::span<const uint32_t, 2> word_span) const {
-		uint64_t h = word_span[0] | ((uint64_t)word_span[1] << 32ULL);
-		h ^= h >> 33;
-		h *= 0xff51afd7ed558ccd;
-		h ^= h >> 33;
-		h *= 0xc4ceb9fe1a85ec53;
-		h ^= h >> 33;
-		return h;
-	}
+	inline uint32_t operator()(auto &&) const { return 0; }
 };
 
 struct AABBEditor {
@@ -75,7 +46,9 @@ struct SingleIterator {
 struct ZeroNodePool final : public hashdag::NodePoolBase<ZeroNodePool, uint32_t, ZeroHasher> {
 	std::vector<uint32_t> memory;
 	std::unordered_map<uint32_t, uint32_t> bucket_words;
+	std::unordered_set<uint32_t> pages;
 
+	inline ~ZeroNodePool() final = default;
 	inline explicit ZeroNodePool(uint32_t level_count)
 	    : hashdag::NodePoolBase<ZeroNodePool, uint32_t, ZeroHasher>(
 	          hashdag::Config<uint32_t>::MakeDefault(level_count)) {
@@ -88,20 +61,24 @@ struct ZeroNodePool final : public hashdag::NodePoolBase<ZeroNodePool, uint32_t,
 	}
 	inline void SetBucketWords(uint32_t bucket_id, uint32_t words) { bucket_words[bucket_id] = words; }
 	inline const uint32_t *ReadPage(uint32_t page_id) const {
+		CHECK(pages.count(page_id));
 		return memory.data() + (page_id << GetConfig().word_bits_per_page);
 	}
-	inline void ZeroPage(uint32_t page_id, uint32_t page_offset, uint32_t zero_words) {}
+	inline void ZeroPage(uint32_t page_id, uint32_t page_offset, uint32_t zero_words) { pages.insert(page_id); }
 	inline void WritePage(uint32_t page_id, uint32_t page_offset, std::span<const uint32_t> word_span) {
+		pages.insert(page_id);
 		std::copy(word_span.begin(), word_span.end(),
 		          memory.data() + ((page_id << GetConfig().word_bits_per_page) | page_offset));
 	}
 };
-struct MurmurNodePool final : public hashdag::NodePoolBase<MurmurNodePool, uint32_t, MurmurHasher> {
+struct MurmurNodePool final : public hashdag::NodePoolBase<MurmurNodePool, uint32_t, hashdag::MurmurHasher32> {
 	std::vector<uint32_t> memory;
 	std::unordered_map<uint32_t, uint32_t> bucket_words;
+	std::unordered_set<uint32_t> pages;
 
+	inline ~MurmurNodePool() final = default;
 	inline explicit MurmurNodePool(uint32_t level_count)
-	    : hashdag::NodePoolBase<MurmurNodePool, uint32_t, MurmurHasher>(
+	    : hashdag::NodePoolBase<MurmurNodePool, uint32_t, hashdag::MurmurHasher32>(
 	          hashdag::Config<uint32_t>::MakeDefault(level_count)) {
 		memory.resize(GetConfig().GetTotalWords());
 	}
@@ -112,10 +89,12 @@ struct MurmurNodePool final : public hashdag::NodePoolBase<MurmurNodePool, uint3
 	}
 	inline void SetBucketWords(uint32_t bucket_id, uint32_t words) { bucket_words[bucket_id] = words; }
 	inline const uint32_t *ReadPage(uint32_t page_id) const {
+		CHECK(pages.count(page_id));
 		return memory.data() + (page_id << GetConfig().word_bits_per_page);
 	}
-	inline void ZeroPage(uint32_t page_id, uint32_t page_offset, uint32_t zero_words) {}
+	inline void ZeroPage(uint32_t page_id, uint32_t page_offset, uint32_t zero_words) { pages.insert(page_id); }
 	inline void WritePage(uint32_t page_id, uint32_t page_offset, std::span<const uint32_t> word_span) {
+		pages.insert(page_id);
 		std::copy(word_span.begin(), word_span.end(),
 		          memory.data() + ((page_id << GetConfig().word_bits_per_page) | page_offset));
 	}
@@ -168,13 +147,14 @@ TEST_SUITE("NodePool") {
 	TEST_CASE("Test Edit() and Iterate()") {
 		MurmurNodePool pool(4);
 		SingleIterator iter{};
-		auto root = pool.Edit(
-		    {}, AABBEditor{.level = pool.GetConfig().GetLowestLevel(), .aabb_min = {}, .aabb_max{4, 4, 4}});
+		auto root =
+		    pool.Edit({}, AABBEditor{.level = pool.GetConfig().GetLowestLevel(), .aabb_min = {}, .aabb_max{4, 4, 4}});
 		CHECK(root);
 		CHECK_EQ(pool.bucket_words.size(), 4);
+		CHECK_EQ(pool.pages.size(), 4);
 
-		auto root2 = pool.Edit(
-		    root, AABBEditor{.level = pool.GetConfig().GetLowestLevel(), .aabb_min = {}, .aabb_max{4, 4, 4}});
+		auto root2 =
+		    pool.Edit(root, AABBEditor{.level = pool.GetConfig().GetLowestLevel(), .aabb_min = {}, .aabb_max{4, 4, 4}});
 		CHECK(root2);
 		CHECK_EQ(root, root2);
 
@@ -191,16 +171,15 @@ TEST_SUITE("NodePool") {
 		CHECK(!iter.exist);
 
 		auto root3 = pool.Edit(
-		    root2,
-		    AABBEditor{.level = pool.GetConfig().GetLowestLevel(), .aabb_min = {1, 1, 1}, .aabb_max{5, 5, 5}});
+		    root2, AABBEditor{.level = pool.GetConfig().GetLowestLevel(), .aabb_min = {1, 1, 1}, .aabb_max{5, 5, 5}});
 		CHECK(root3);
 		CHECK_NE(root, root3);
 
 		auto root4 = pool.Edit(
-		    root3,
-		    AABBEditor{.level = pool.GetConfig().GetLowestLevel(), .aabb_min = {1, 2, 3}, .aabb_max{3, 5, 5}});
+		    root3, AABBEditor{.level = pool.GetConfig().GetLowestLevel(), .aabb_min = {1, 2, 3}, .aabb_max{3, 5, 5}});
 		CHECK(root4);
 		CHECK_EQ(root3, root4);
+		CHECK_GT(pool.pages.size(), 4);
 
 		iter = SingleIterator{.level = pool.GetConfig().GetLowestLevel(), .pos = {4, 3, 3}, .exist = false};
 		pool.Iterate(root4, &iter);
