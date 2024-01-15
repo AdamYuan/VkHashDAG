@@ -68,6 +68,7 @@ int main() {
 	                            });
 	auto fence = myvk::Fence::Create(device);
 	dag_node_pool->Flush({}, {}, fence);
+	fence->Wait();
 
 	myvk::ImGuiInit(window, myvk::CommandPool::Create(generic_queue));
 
