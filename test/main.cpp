@@ -48,13 +48,27 @@ struct AABBEditor {
 		return !ub.Any(std::less_equal<uint32_t>{}, aabb_min) && !lb.Any(std::greater_equal<uint32_t>{}, aabb_max);
 	}
 	inline bool Edit(const hashdag::NodeCoord<uint32_t> &coord, bool voxel) const {
-		/* if (coord.level != level)
-		    printf("ERROR\n");
-		if (coord.pos.All(std::greater_equal<uint32_t>{}, aabb_min) && coord.pos.All(std::less<uint32_t>{}, aabb_max))
-		    printf("(%d %d %d)\n", coord.pos.x, coord.pos.y, coord.pos.z); */
+		/*if (coord.pos.All(std::greater_equal<uint32_t>{}, aabb_min) && coord.pos.All(std::less<uint32_t>{}, aabb_max))
+		    printf("(%d %d %d)\n", coord.pos.x, coord.pos.y, coord.pos.z);
+		*/
 		CHECK_EQ(coord.level, level);
 		return voxel || coord.pos.All(std::greater_equal<uint32_t>{}, aabb_min) &&
 		                    coord.pos.All(std::less<uint32_t>{}, aabb_max);
+	}
+};
+
+struct SingleIterator {
+	uint32_t level;
+	hashdag::Vec3<uint32_t> pos;
+	bool exist;
+	inline bool IsAffected(const hashdag::NodeCoord<uint32_t> &coord) const {
+		auto lb = coord.GetLowerBoundAtLevel(level), ub = coord.GetUpperBoundAtLevel(level);
+		return !ub.Any(std::less_equal<uint32_t>{}, pos) && !lb.Any(std::greater<uint32_t>{}, pos);
+	}
+	inline void Iterate(const hashdag::NodeCoord<uint32_t> &coord) {
+		CHECK_EQ(coord.level, level);
+		if (coord.pos == pos)
+			exist = true;
 	}
 };
 
@@ -151,8 +165,9 @@ TEST_SUITE("NodePool") {
 		}
 		CHECK_EQ(cnt, (pool.GetNodeConfig().GetWordsPerPage() / 3) * pool.GetNodeConfig().GetPagesPerBucket());
 	}
-	TEST_CASE("Test Edit()") {
+	TEST_CASE("Test Edit() and Iterate()") {
 		MurmurNodePool pool(4);
+		SingleIterator iter{};
 		auto root = pool.Edit(
 		    {}, AABBEditor{.level = pool.GetNodeConfig().GetLowestLevel(), .aabb_min = {}, .aabb_max{4, 4, 4}});
 		CHECK(root);
@@ -162,6 +177,18 @@ TEST_SUITE("NodePool") {
 		    root, AABBEditor{.level = pool.GetNodeConfig().GetLowestLevel(), .aabb_min = {}, .aabb_max{4, 4, 4}});
 		CHECK(root2);
 		CHECK_EQ(root, root2);
+
+		iter = SingleIterator{.level = pool.GetNodeConfig().GetLowestLevel(), .pos = {3, 3, 3}, .exist = false};
+		pool.Iterate(root2, &iter);
+		CHECK(iter.exist);
+
+		iter = SingleIterator{.level = pool.GetNodeConfig().GetLowestLevel(), .pos = {4, 3, 3}, .exist = false};
+		pool.Iterate(root2, &iter);
+		CHECK(!iter.exist);
+
+		iter = SingleIterator{.level = pool.GetNodeConfig().GetLowestLevel(), .pos = {3, 3, 3}, .exist = false};
+		pool.Iterate({}, &iter);
+		CHECK(!iter.exist);
 
 		auto root3 = pool.Edit(
 		    root2,
@@ -174,5 +201,9 @@ TEST_SUITE("NodePool") {
 		    AABBEditor{.level = pool.GetNodeConfig().GetLowestLevel(), .aabb_min = {1, 2, 3}, .aabb_max{3, 5, 5}});
 		CHECK(root4);
 		CHECK_EQ(root3, root4);
+
+		iter = SingleIterator{.level = pool.GetNodeConfig().GetLowestLevel(), .pos = {4, 3, 3}, .exist = false};
+		pool.Iterate(root4, &iter);
+		CHECK(iter.exist);
 	}
 }

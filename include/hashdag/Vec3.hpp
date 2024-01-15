@@ -16,6 +16,8 @@ template <typename Type> struct Vec3 {
 	inline bool All(auto &&compare, const Vec3 &r) const {
 		return compare(x, r.x) && compare(y, r.y) && compare(z, r.z);
 	}
+	inline bool operator==(const Vec3 &r) const { return x == r.x && y == r.y && z == r.z; }
+	inline bool operator!=(const Vec3 &r) const { return x != r.x || y != r.y || z != r.z; }
 };
 
 } // namespace hashdag
