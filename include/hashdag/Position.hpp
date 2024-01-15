@@ -12,6 +12,12 @@ namespace hashdag {
 
 template <typename Type> struct Vec3 {
 	Type x, y, z;
+	inline bool Any(auto &&compare, const Vec3 &r) const {
+		return compare(x, r.x) || compare(y, r.y) || compare(z, r.z);
+	}
+	inline bool All(auto &&compare, const Vec3 &r) const {
+		return compare(x, r.x) && compare(y, r.y) && compare(z, r.z);
+	}
 };
 
 template <std::unsigned_integral Word> struct NodeCoord {

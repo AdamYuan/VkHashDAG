@@ -38,6 +38,9 @@ public:
 	inline bool HasValue() const { return m_node != -1; }
 	inline operator bool() const { return HasValue(); }
 
+	inline bool operator==(NodePointer r) const { return m_node == r.m_node; }
+	inline bool operator!=(NodePointer r) const { return m_node != r.m_node; }
+
 	inline Word Value() const { return m_node; }
 	inline Word operator*() const { return Value(); }
 
@@ -86,7 +89,8 @@ public:
 	}
 	template <size_t NodeSpanExtent>
 	inline NodePointer<Word> upsert_node(auto &&get_node_words, Word level,
-	                                     std::span<const Word, NodeSpanExtent> node_span) {
+	                                     std::span<const Word, NodeSpanExtent> node_span,
+	                                     NodePointer<Word> fallback_ptr) {
 		const Word bucket_index =
 		    m_bucket_level_bases[level] + (WordSpanHasher{}(node_span) & (m_config.GetBucketsAtLevel(level) - 1));
 		const Word bucket_words = get_bucket_words(bucket_index);
@@ -117,9 +121,9 @@ public:
 
 		// Append Node if not exist
 		{
-			// If the bucket is full, return Null
+			// If the bucket is full, return fallback
 			if (bucket_words + node_span.size() > m_config.GetWordsPerBucket())
-				return NodePointer<Word>::Null();
+				return fallback_ptr;
 
 			Word dst_page_slot = bucket_words >> m_config.word_bits_per_page; // PageID in bucket
 			Word dst_page_index = bucket_page_index | dst_page_slot;
@@ -134,13 +138,15 @@ public:
 			}
 
 			write_page(dst_page_index, dst_page_offset, node_span);
-			set_bucket_words(bucket_index, ((dst_page_slot << m_config.word_bits_per_page) | dst_page_offset) + node_span.size());
+			set_bucket_words(bucket_index,
+			                 ((dst_page_slot << m_config.word_bits_per_page) | dst_page_offset) + node_span.size());
 
 			return (dst_page_index << m_config.word_bits_per_page) | dst_page_offset;
 		}
 	}
 
-	inline NodePointer<Word> upsert_inner_node(Word level, std::span<const Word> node_span) {
+	inline NodePointer<Word> upsert_inner_node(Word level, std::span<const Word> node_span,
+	                                           NodePointer<Word> fallback_ptr) {
 		const auto get_node_words = [](const Word *p_packed_node) {
 			// Zero for empty node so that find_node can break
 			static constexpr uint8_t kPopCount8_Plus1_Zero[] = {
@@ -155,15 +161,16 @@ public:
 			};
 			return kPopCount8_Plus1_Zero[uint8_t(*p_packed_node)];
 		};
-		return upsert_node(get_node_words, level, node_span);
+		return upsert_node(get_node_words, level, node_span, fallback_ptr);
 	}
-	inline NodePointer<Word> upsert_leaf(Word level, std::span<const Word, NodeConfig<Word>::kWordsPerLeaf> leaf_span) {
+	inline NodePointer<Word> upsert_leaf(Word level, std::span<const Word, NodeConfig<Word>::kWordsPerLeaf> leaf_span,
+	                                     NodePointer<Word> fallback_ptr) {
 		const auto get_node_words = [](auto) { return NodeConfig<Word>::kWordsPerLeaf; };
-		return upsert_node(get_node_words, level, leaf_span);
+		return upsert_node(get_node_words, level, leaf_span, fallback_ptr);
 	}
 
 	inline static std::span<const Word> get_packed_node_inplace(std::span<Word, 9> unpacked_node) {
-		Word child_mask = unpacked_node.data();
+		Word child_mask = unpacked_node.front();
 		Word *p_children = unpacked_node.data() + 1, *p_next_child = p_children;
 
 		while (child_mask) {
@@ -207,10 +214,10 @@ public:
 		bool changed = false;
 
 		for (Word i = 0; i < 64; ++i) {
-			constexpr Word kWordBits = sizeof(Word) * 8, kWordMask = (1u << kWordBits) - 1u;
+			constexpr Word kWordBits = std::countr_zero(sizeof(Word) * 8), kWordMask = (1u << kWordBits) - 1u;
 
 			bool voxel = (leaf[i >> kWordBits] >> (i & kWordMask)) & 1u;
-			bool new_voxel = editor.Edit(coord.GetChildCoord(i), voxel);
+			bool new_voxel = editor.Edit(coord.GetLeafCoord(i), voxel);
 
 			if (new_voxel != voxel) {
 				changed = true;
@@ -218,7 +225,8 @@ public:
 			}
 		}
 
-		return changed ? (leaf == LeafArray{0} ? NodePointer<Word>::Null() : upsert_leaf(coord.level, leaf)) : leaf_ptr;
+		return changed ? (leaf == LeafArray{0} ? NodePointer<Word>::Null() : upsert_leaf(coord.level, leaf, leaf_ptr))
+		               : leaf_ptr;
 	}
 	inline NodePointer<Word> edit_inner_node(const Editor<Word> auto &editor, NodePointer<Word> node_ptr,
 	                                         const NodeCoord<Word> &coord) {
@@ -230,13 +238,14 @@ public:
 
 		std::array<Word, 9> unpacked_node = get_unpacked_node_array(node_ptr);
 		Word &child_mask = unpacked_node[0];
-		std::span<Word, 8> children = {unpacked_node.data() + 1};
+		std::span<Word, 8> children = std::span<Word, 9>{unpacked_node}.template subspan<1>();
 
 		bool changed = false;
 
 		for (Word i = 0; i < 8; ++i) {
-			NodePointer<Word> child_ptr = ((child_mask >> i) & 1u) ? children[i] : NodePointer<Word>::Null();
-			NodePointer<Word> new_child_ptr = edit(editor, child_ptr, coord.GetChildCoord(i));
+			NodePointer<Word> child_ptr =
+			    ((child_mask >> i) & 1u) ? NodePointer<Word>{children[i]} : NodePointer<Word>::Null();
+			NodePointer<Word> new_child_ptr = edit_inner_node(editor, child_ptr, coord.GetChildCoord(i));
 
 			if (new_child_ptr != child_ptr) {
 				changed = true;
@@ -249,7 +258,7 @@ public:
 			}
 		}
 
-		return changed ? (child_mask ? upsert_inner_node(coord.level, get_packed_node_inplace(unpacked_node))
+		return changed ? (child_mask ? upsert_inner_node(coord.level, get_packed_node_inplace(unpacked_node), node_ptr)
 		                             : NodePointer<Word>::Null())
 		               : node_ptr;
 	}
@@ -260,6 +269,9 @@ public:
 		m_bucket_level_bases = m_config.GetLevelBaseBucketIndices();
 	}
 	inline const auto &GetNodeConfig() const { return m_config; }
+	inline NodePointer<Word> Edit(NodePointer<Word> root_ptr, const Editor<Word> auto &editor) {
+		return edit_inner_node(editor, root_ptr, {});
+	}
 };
 
 } // namespace hashdag

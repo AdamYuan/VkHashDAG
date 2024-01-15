@@ -8,7 +8,6 @@
 
 #include <cinttypes>
 #include <concepts>
-#include <numeric>
 #include <vector>
 
 namespace hashdag {
@@ -22,18 +21,17 @@ template <std::unsigned_integral Word> struct NodeConfig {
 	std::vector<Word> bucket_bits_each_level;
 
 	inline static constexpr Word GetWordsPerLeaf() { return kWordsPerLeaf; }
-	inline Word GetWordsPerPage() const { return 1 << word_bits_per_page; }
-	inline Word GetPagesPerBucket() const { return 1 << page_bits_per_bucket; }
-	inline Word GetWordsPerBucket() const { return 1 << (word_bits_per_page + page_bits_per_bucket); }
-	inline Word GetBucketsAtLevel(Word level) const { return 1 << bucket_bits_each_level[level]; }
+	inline Word GetWordsPerPage() const { return Word(1u) << word_bits_per_page; }
+	inline Word GetPagesPerBucket() const { return Word(1u) << page_bits_per_bucket; }
+	inline Word GetWordsPerBucket() const { return Word(1u) << (word_bits_per_page + page_bits_per_bucket); }
+	inline Word GetBucketsAtLevel(Word level) const { return Word(1u) << bucket_bits_each_level[level]; }
 	inline Word GetNodeLevels() const { return bucket_bits_each_level.size(); }
-	inline Word GetActualLevels() const {
-		return GetNodeLevels() + 2; // Plus 2 because leaf node is a 4^3 volume
-	}
+	inline Word GetLowestLevel() const { return GetNodeLevels() + 1u; }
+	inline Word GetResolution() const { return Word(1u) << GetLowestLevel(); }
 	inline Word GetTotalBuckets() const {
 		Word total_buckets = 0;
 		for (Word bucket_bits : bucket_bits_each_level)
-			total_buckets += (1u << bucket_bits);
+			total_buckets += (Word(1u) << bucket_bits);
 		return total_buckets;
 	}
 	inline std::vector<Word> GetLevelBaseBucketIndices() const {
@@ -52,7 +50,7 @@ template <std::unsigned_integral Word> struct NodeConfig {
 		for (Word c : config.buckets_each_level)
 			bucket_count += 1ULL << c;
 		uint64_t total_words = bucket_count * config.GetWordsPerBucket();
-		return total_words - 1 <= uint64_t(std::numeric_limits<Word>::max());
+		return total_words - 1 <= uint64_t(Word(-1));
 	}
 	inline static NodeConfig MakeDefault(uint32_t level_count, uint32_t top_level_count = 9,
 	                                     Word word_bits_per_page = 9,           // 512
