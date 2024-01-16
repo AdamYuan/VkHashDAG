@@ -25,6 +25,18 @@ void DAGNodePool::create_buffer() {
 
 	vkCreateBuffer(m_device_ptr->GetHandle(), &create_info, nullptr, &m_gpu_buffer);
 }
+void DAGNodePool::create_gpu_pages() {
+	vkGetBufferMemoryRequirements(m_device_ptr->GetHandle(), m_gpu_buffer, &m_gpu_page_memory_requirements);
+	m_page_bits_per_gpu_page =
+	    m_gpu_page_memory_requirements.alignment <= GetConfig().GetWordsPerPage() * sizeof(uint32_t)
+	        ? 0
+	        : std::countr_zero(m_gpu_page_memory_requirements.alignment / sizeof(uint32_t)) -
+	              GetConfig().word_bits_per_page;
+	m_gpu_page_memory_requirements.size =
+	    (1u << (GetConfig().word_bits_per_page + m_page_bits_per_gpu_page)) * sizeof(uint32_t);
+
+	m_gpu_pages.resize(1 + (GetConfig().GetTotalPages() >> m_page_bits_per_gpu_page));
+}
 void DAGNodePool::destroy_buffer() {
 	std::vector<VmaAllocation> allocations;
 	for (const auto &gpu_page : m_gpu_pages)
@@ -36,8 +48,37 @@ void DAGNodePool::destroy_buffer() {
 	vkDestroyBuffer(m_device_ptr->GetHandle(), m_gpu_buffer, nullptr);
 }
 
+void DAGNodePool::create_descriptor() {
+	VkDescriptorSetLayoutBinding layout_binding = {};
+	layout_binding.binding = 0;
+	layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	layout_binding.descriptorCount = 1;
+	layout_binding.stageFlags = VK_SHADER_STAGE_ALL;
+
+	auto descriptor_set_layout = myvk::DescriptorSetLayout::Create(m_device_ptr, {layout_binding});
+	auto descriptor_pool = myvk::DescriptorPool::Create(m_device_ptr, 1, {{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1}});
+	m_descriptor_set = myvk::DescriptorSet::Create(descriptor_pool, descriptor_set_layout);
+
+	// Write descriptor
+	VkDescriptorBufferInfo buffer_info = {
+	    .buffer = m_gpu_buffer,
+	    .offset = 0,
+	    .range = m_gpu_buffer_size,
+	};
+	VkWriteDescriptorSet write = {};
+	write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	write.dstSet = m_descriptor_set->GetHandle();
+	write.dstBinding = 0;
+	write.dstArrayElement = 0;
+	write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	write.descriptorCount = 1;
+	write.pBufferInfo = &buffer_info;
+
+	vkUpdateDescriptorSets(m_device_ptr->GetHandle(), 1, &write, 0, nullptr);
+}
+
 void DAGNodePool::Flush(const myvk::SemaphoreGroup &wait_semaphores, const myvk::SemaphoreGroup &signal_semaphores,
-                     const myvk::Ptr<myvk::Fence> &fence) {
+                        const myvk::Ptr<myvk::Fence> &fence) {
 	std::unordered_set<uint32_t> missing_gpu_page_indices;
 	for (const auto &it : m_gpu_write_ranges) {
 		uint32_t page_id = it.first, gpu_page_id = page_id >> m_page_bits_per_gpu_page;

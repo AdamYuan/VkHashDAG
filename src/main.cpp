@@ -5,7 +5,9 @@
 #include <myvk/Instance.hpp>
 #include <myvk/Queue.hpp>
 
+#include "Camera.hpp"
 #include "DAGNodePool.hpp"
+#include "DAGRenderer.hpp"
 #include "GPSQueueSelector.hpp"
 
 constexpr uint32_t kFrameCount = 3;
@@ -59,16 +61,25 @@ int main() {
 	}
 
 	auto dag_node_pool =
-	    myvk::MakePtr<DAGNodePool>(generic_queue, sparse_queue, hashdag::Config<uint32_t>::MakeDefault(17, 9, 11, 0));
-	hashdag::NodePointer<uint32_t> root =
-	    dag_node_pool->Edit({}, AABBEditor{
-	                                .level = dag_node_pool->GetConfig().GetLowestLevel(),
-	                                .aabb_min = {0, 0, 0},
-	                                .aabb_max = {4, 4, 4},
-	                            });
+	    myvk::MakePtr<DAGNodePool>(generic_queue, sparse_queue, hashdag::Config<uint32_t>::MakeDefault(10, 9, 11, 0));
+	dag_node_pool->SetRoot(
+	    dag_node_pool->Edit(dag_node_pool->GetRoot(), AABBEditor{
+	                                                      .level = dag_node_pool->GetConfig().GetLowestLevel(),
+	                                                      .aabb_min = {0, 0, 0},
+	                                                      .aabb_max = {4, 4, 4},
+	                                                  }));
+	dag_node_pool->SetRoot(
+	    dag_node_pool->Edit(dag_node_pool->GetRoot(), AABBEditor{
+	                                                      .level = dag_node_pool->GetConfig().GetLowestLevel(),
+	                                                      .aabb_min = {8, 8, 8},
+	                                                      .aabb_max = {512, 512, 512},
+	                                                  }));
 	auto fence = myvk::Fence::Create(device);
 	dag_node_pool->Flush({}, {}, fence);
 	fence->Wait();
+
+	auto camera = myvk::MakePtr<Camera>();
+	auto dag_renderer = myvk::MakePtr<DAGRenderer>(dag_node_pool, render_pass, 0);
 
 	myvk::ImGuiInit(window, myvk::CommandPool::Create(generic_queue));
 
@@ -79,8 +90,15 @@ int main() {
 		framebuffer = myvk::ImagelessFramebuffer::Create(render_pass, {frame_manager->GetSwapchainImageViews()[0]});
 	});
 
+	double prev_time = glfwGetTime();
+
 	while (!glfwWindowShouldClose(window)) {
 		glfwPollEvents();
+
+		double time = glfwGetTime(), delta = time - prev_time;
+		prev_time = time;
+
+		camera->DragControl(window, float(delta));
 
 		myvk::ImGuiNewFrame();
 		ImGui::Begin("Test");
@@ -98,6 +116,8 @@ int main() {
 			command_buffer->CmdBeginRenderPass(render_pass, {framebuffer},
 			                                   {frame_manager->GetCurrentSwapchainImageView()},
 			                                   {{{0.5f, 0.5f, 0.5f, 1.0f}}});
+			dag_renderer->CmdDrawPipeline(command_buffer, *camera, //
+			                              frame_manager->GetExtent().width, frame_manager->GetExtent().height);
 			command_buffer->CmdNextSubpass();
 			imgui_renderer->CmdDrawPipeline(command_buffer, current_frame);
 			command_buffer->CmdEndRenderPass();

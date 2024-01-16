@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.15)
 project(VkHashDAG)
 
 set(SHADER_SRC
+        quad.vert
+        dag.frag
 )
 
 find_program(GLSLC "glslc")
