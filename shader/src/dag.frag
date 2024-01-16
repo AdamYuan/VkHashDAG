@@ -16,6 +16,14 @@ struct StackItem {
 	float t_max;
 } stack[STACK_SIZE];
 
+uint DAG_GetLeafFirstChildBits(in const uint node) {
+	uint l0 = uDAG[node], l1 = uDAG[node + 1];
+	return ((l0 & 0x000000FFu) == 0u ? 0u : 0x01u) | ((l0 & 0x0000FF00u) == 0u ? 0u : 0x02u) |
+	       ((l0 & 0x00FF0000u) == 0u ? 0u : 0x04u) | ((l0 & 0xFF000000u) == 0u ? 0u : 0x08u) |
+	       ((l1 & 0x000000FFu) == 0u ? 0u : 0x10u) | ((l1 & 0x0000FF00u) == 0u ? 0u : 0x20u) |
+	       ((l1 & 0x00FF0000u) == 0u ? 0u : 0x40u) | ((l1 & 0xFF000000u) == 0u ? 0u : 0x80u);
+}
+
 bool DAG_RayMarchLeaf(uint root, vec3 o, vec3 d, out vec3 o_pos, out vec3 o_normal, out uint o_iter) {
 	if (root == -1)
 		return false;
@@ -28,40 +36,44 @@ bool DAG_RayMarchLeaf(uint root, vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm
 
 	// Precompute the coefficients of tx(x), ty(y), and tz(z).
 	// The octree is assumed to reside at coordinates [1, 2].
-	vec3 t_coef = 1.0f / -abs(d);
+	vec3 t_coef = 1.0 / -abs(d);
 	vec3 t_bias = t_coef * o;
 
 	uint oct_mask = 0u;
 	if (d.x > 0.0f)
-		oct_mask ^= 1u, t_bias.x = 3.0f * t_coef.x - t_bias.x;
+		oct_mask ^= 1u, t_bias.x = 3.0 * t_coef.x - t_bias.x;
 	if (d.y > 0.0f)
-		oct_mask ^= 2u, t_bias.y = 3.0f * t_coef.y - t_bias.y;
+		oct_mask ^= 2u, t_bias.y = 3.0 * t_coef.y - t_bias.y;
 	if (d.z > 0.0f)
-		oct_mask ^= 4u, t_bias.z = 3.0f * t_coef.z - t_bias.z;
+		oct_mask ^= 4u, t_bias.z = 3.0 * t_coef.z - t_bias.z;
 
 	// Initialize the active span of t-values.
-	float t_min = max(max(2.0f * t_coef.x - t_bias.x, 2.0f * t_coef.y - t_bias.y), 2.0f * t_coef.z - t_bias.z);
+	float t_min = max(max(2.0 * t_coef.x - t_bias.x, 2.0 * t_coef.y - t_bias.y), 2.0 * t_coef.z - t_bias.z);
 	float t_max = min(min(t_coef.x - t_bias.x, t_coef.y - t_bias.y), t_coef.z - t_bias.z);
-	t_min = max(t_min, 0.0f);
+	t_min = max(t_min, 0.0);
 	float h = t_max;
 
 	uint parent = root, child_bits = 0u;
-	vec3 pos = vec3(1.0f);
+	vec3 pos = vec3(1.0);
 	uint idx = 0u;
 	if (1.5f * t_coef.x - t_bias.x > t_min)
-		idx ^= 1u, pos.x = 1.5f;
+		idx ^= 1u, pos.x = 1.5;
 	if (1.5f * t_coef.y - t_bias.y > t_min)
-		idx ^= 2u, pos.y = 1.5f;
+		idx ^= 2u, pos.y = 1.5;
 	if (1.5f * t_coef.z - t_bias.z > t_min)
-		idx ^= 4u, pos.z = 1.5f;
+		idx ^= 4u, pos.z = 1.5;
 
 	uint scale = STACK_SIZE - 1;
-	float scale_exp2 = 0.5f; // exp2( scale - STACK_SIZE )
+	float scale_exp2 = 0.5; // exp2( scale - STACK_SIZE )
+
+	const uint leaf_scale = STACK_SIZE - uDAGNodeLevels;
 
 	while (scale < STACK_SIZE) {
 		++iter;
+
 		if (child_bits == 0u)
-			child_bits = uDAG[parent];
+			child_bits =
+			    scale > leaf_scale ? uDAG[parent] : (scale == leaf_scale ? DAG_GetLeafFirstChildBits(parent) : parent);
 		// Determine maximum t-value of the cube by evaluating
 		// tx(), ty(), and tz() at its corner.
 
@@ -74,11 +86,11 @@ bool DAG_RayMarchLeaf(uint root, vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm
 		if ((child_bits & child_mask) != 0 && t_min <= t_max) {
 			// INTERSECT
 			float tv_max = min(t_max, tc_max);
-			float half_scale_exp2 = scale_exp2 * 0.5f;
+			float half_scale_exp2 = scale_exp2 * 0.5;
 			vec3 t_center = half_scale_exp2 * t_coef + t_corner;
 
 			if (t_min <= tv_max) {
-				if (scale <= STACK_SIZE - uDAGNodeLevels) // leaf node
+				if (scale < leaf_scale) // leaf node
 					break;
 
 				// PUSH
@@ -88,7 +100,9 @@ bool DAG_RayMarchLeaf(uint root, vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm
 				}
 				h = tc_max;
 
-				parent = uDAG[parent + 1 + bitCount(child_bits & (child_mask - 1))];
+				parent = scale > leaf_scale
+				             ? uDAG[parent + 1 + bitCount(child_bits & (child_mask - 1))]
+				             : (uDAG[parent + (child_shift >> 2u)] >> ((child_shift & 3u) << 3u)) & 0xFFu;
 
 				idx = 0u;
 				--scale;
@@ -149,7 +163,7 @@ bool DAG_RayMarchLeaf(uint root, vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm
 
 			// Prevent same parent from being stored again and invalidate cached
 			// child descriptor.
-			h = 0.0f;
+			h = 0.0;
 			child_bits = 0;
 		}
 	}
@@ -168,11 +182,11 @@ bool DAG_RayMarchLeaf(uint root, vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm
 
 	// Undo mirroring of the coordinate system.
 	if ((oct_mask & 1u) != 0u)
-		pos.x = 3.0f - scale_exp2 - pos.x;
+		pos.x = 3.0 - scale_exp2 - pos.x;
 	if ((oct_mask & 2u) != 0u)
-		pos.y = 3.0f - scale_exp2 - pos.y;
+		pos.y = 3.0 - scale_exp2 - pos.y;
 	if ((oct_mask & 4u) != 0u)
-		pos.z = 3.0f - scale_exp2 - pos.z;
+		pos.z = 3.0 - scale_exp2 - pos.z;
 
 	// Output results.
 	o_pos = clamp(o + t_min * d, pos, pos + scale_exp2);
@@ -205,5 +219,5 @@ void main() {
 	bool hit = DAG_RayMarchLeaf(uDAGRoot, o, d, pos, norm, iter);
 
 	oColor = hit ? vec4(norm * .5 + .5, 1.0) : vec4(0, 0, 0, 1);
-	// oColor = vec4(Heat(float(iter) / 16.0), 1.0);
+	// oColor = vec4(Heat(float(iter) / 128.0), 1.0);
 }

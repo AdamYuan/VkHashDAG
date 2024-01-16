@@ -66,19 +66,20 @@ int main() {
 	    dag_node_pool->Edit(dag_node_pool->GetRoot(), AABBEditor{
 	                                                      .level = dag_node_pool->GetConfig().GetLowestLevel(),
 	                                                      .aabb_min = {0, 0, 0},
-	                                                      .aabb_max = {4, 4, 4},
+	                                                      .aabb_max = {3, 2, 4},
 	                                                  }));
 	dag_node_pool->SetRoot(
 	    dag_node_pool->Edit(dag_node_pool->GetRoot(), AABBEditor{
 	                                                      .level = dag_node_pool->GetConfig().GetLowestLevel(),
-	                                                      .aabb_min = {8, 8, 8},
-	                                                      .aabb_max = {512, 512, 512},
+	                                                      .aabb_min = {4, 4, 4},
+	                                                      .aabb_max = {511, 511, 511},
 	                                                  }));
 	auto fence = myvk::Fence::Create(device);
 	dag_node_pool->Flush({}, {}, fence);
 	fence->Wait();
 
 	auto camera = myvk::MakePtr<Camera>();
+	camera->m_speed = 0.25f;
 	auto dag_renderer = myvk::MakePtr<DAGRenderer>(dag_node_pool, render_pass, 0);
 
 	myvk::ImGuiInit(window, myvk::CommandPool::Create(generic_queue));

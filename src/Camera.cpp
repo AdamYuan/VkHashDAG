@@ -5,8 +5,8 @@
 #include <imgui_internal.h>
 
 void Camera::move_forward(float dist, float dir) {
-	m_position.x -= glm::sin(m_yaw + dir) * dist;
-	m_position.z -= glm::cos(m_yaw + dir) * dist;
+	m_position.x += glm::sin(m_yaw + dir) * dist;
+	m_position.z += glm::cos(m_yaw + dir) * dist;
 }
 
 void Camera::DragControl(GLFWwindow *window, double delta) {

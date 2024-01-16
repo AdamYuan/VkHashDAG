@@ -25,12 +25,7 @@ template <std::unsigned_integral Word> struct NodeCoord {
 	}
 
 	inline NodeCoord GetLeafCoord(Word leaf_index) const {
-		return {
-		    .level = level + 2,
-		    .pos = {.x = (pos.x << 2u) | ((leaf_index >> 0u) & 3u),
-		            .y = (pos.y << 2u) | ((leaf_index >> 2u) & 3u),
-		            .z = (pos.z << 2u) | ((leaf_index >> 4u) & 3u)},
-		};
+		return GetChildCoord(leaf_index >> 3u).GetChildCoord(leaf_index & 7u);
 	}
 
 	template <std::floating_point Float> inline Vec3<Float> GetCenter() const {

@@ -14,7 +14,7 @@ class Camera {
 public:
 	glm::vec3 m_position{0.0f, 0.0f, 0.0f};
 	float m_yaw{0.0f}, m_pitch{0.0f};
-	float m_sensitive{0.005f}, m_speed{2.0f}, m_fov{glm::pi<float>() / 3.f};
+	float m_sensitive{0.005f}, m_speed{.5f}, m_fov{glm::pi<float>() / 3.f};
 
 	struct LookSideUp {
 		glm::vec3 look, side, up;
