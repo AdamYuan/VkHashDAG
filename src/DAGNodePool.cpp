@@ -148,4 +148,5 @@ void DAGNodePool::Flush(const myvk::SemaphoreGroup &wait_semaphores, const myvk:
 		std::copy(m_pages[page_id].get() + range.begin, m_pages[page_id].get() + range.end,
 		          gpu_page.p_mapped_data + gpu_page_offset);
 	}
+	m_gpu_write_ranges.clear();
 }

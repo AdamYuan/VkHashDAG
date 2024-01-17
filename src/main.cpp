@@ -53,7 +53,7 @@ template <typename Func> inline long ns(Func &&func) {
 	return std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count();
 }
 
-lf::busy_pool busy_pool(8);
+lf::busy_pool busy_pool(12);
 
 int main() {
 	GLFWwindow *window = myvk::GLFWCreateWindow("Test", 640, 480, true);
@@ -86,12 +86,11 @@ int main() {
 		render_pass = myvk::RenderPass::Create(device, state);
 	}
 
-	// auto dag_node_pool =
-	//      myvk::MakePtr<DAGNodePool>(generic_queue, sparse_queue, hashdag::Config<uint32_t>::MakeDefault(17, 9, 11,
-	//      0));
+	auto dag_node_pool =
+	    myvk::MakePtr<DAGNodePool>(generic_queue, sparse_queue, hashdag::Config<uint32_t>::MakeDefault(17, 9, 11, 0));
 
-	auto dag_node_pool = myvk::MakePtr<DAGNodePool>(generic_queue, sparse_queue,
-	                                                hashdag::Config<uint32_t>::MakeDefault(17, 9, 14, 0, 7, 13));
+	// auto dag_node_pool = myvk::MakePtr<DAGNodePool>(generic_queue, sparse_queue,
+	//                                                 hashdag::Config<uint32_t>::MakeDefault(17, 9, 14, 0, 7, 13));
 	auto edit_ns = ns([&]() {
 		dag_node_pool->SetRoot(dag_node_pool->EditLibFork(&busy_pool, dag_node_pool->GetRoot(),
 		                                                  AABBEditor{

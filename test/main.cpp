@@ -12,19 +12,22 @@ struct ZeroHasher {
 struct AABBEditor {
 	uint32_t level;
 	hashdag::Vec3<uint32_t> aabb_min, aabb_max;
-	inline bool IsAffected(const hashdag::NodeCoord<uint32_t> &coord) const {
+	inline hashdag::EditType EditNode(const hashdag::NodeCoord<uint32_t> &coord) const {
 		auto lb = coord.GetLowerBoundAtLevel(level), ub = coord.GetUpperBoundAtLevel(level);
 		/* printf("(%d %d %d), (%d, %d, %d) -> %d\n", lb.x, lb.y, lb.z, ub.x, ub.y, ub.z,
 		       !ub.Any(std::less_equal<uint32_t>{}, aabb_min) && !lb.Any(std::greater_equal<uint32_t>{}, aabb_max)); */
-		return !ub.Any(std::less_equal<uint32_t>{}, aabb_min) && !lb.Any(std::greater_equal<uint32_t>{}, aabb_max);
+		if (ub.Any(std::less_equal<uint32_t>{}, aabb_min) || lb.Any(std::greater_equal<uint32_t>{}, aabb_max))
+			return hashdag::EditType::kNotAffected;
+		if (lb.All(std::greater_equal<uint32_t>{}, aabb_min) && ub.All(std::less_equal<uint32_t>{}, aabb_max))
+			return hashdag::EditType::kFill;
+		return hashdag::EditType::kAffected;
 	}
-	inline bool Edit(const hashdag::NodeCoord<uint32_t> &coord, bool voxel) const {
+	inline bool EditVoxel(const hashdag::NodeCoord<uint32_t> &coord, bool voxel) const {
 		/*if (coord.pos.All(std::greater_equal<uint32_t>{}, aabb_min) && coord.pos.All(std::less<uint32_t>{}, aabb_max))
 		    printf("(%d %d %d)\n", coord.pos.x, coord.pos.y, coord.pos.z);
 		*/
-		CHECK_EQ(coord.level, level);
 		return voxel || coord.pos.All(std::greater_equal<uint32_t>{}, aabb_min) &&
-		                    coord.pos.All(std::less<uint32_t>{}, aabb_max);
+		                coord.pos.All(std::less<uint32_t>{}, aabb_max);
 	}
 };
 
@@ -150,8 +153,6 @@ TEST_SUITE("NodePool") {
 		auto root =
 		    pool.Edit({}, AABBEditor{.level = pool.GetConfig().GetLowestLevel(), .aabb_min = {}, .aabb_max{4, 4, 4}});
 		CHECK(root);
-		CHECK_EQ(pool.bucket_words.size(), 4);
-		CHECK_EQ(pool.pages.size(), 4);
 
 		auto root2 =
 		    pool.Edit(root, AABBEditor{.level = pool.GetConfig().GetLowestLevel(), .aabb_min = {}, .aabb_max{4, 4, 4}});

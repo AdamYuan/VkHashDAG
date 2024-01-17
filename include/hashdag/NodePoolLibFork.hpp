@@ -16,6 +16,8 @@
 
 namespace hashdag {
 
+// TODO: Bugfix
+
 template <typename Derived, std::unsigned_integral Word, Hasher<Word> WordSpanHasher> class NodePoolLibFork {
 private:
 	inline const auto &get_node_pool() const {
@@ -33,10 +35,10 @@ private:
 			*p_node_ptr = get_node_pool().template edit_leaf<true>(*p_editor, node_ptr, coord);
 			co_return;
 		}
-		if (coord.level > 10) {
-			*p_node_ptr = get_node_pool().template edit_inner_node<true>(*p_editor, node_ptr, coord);
-			co_return;
-		}
+		/* if (coord.level > 10) {
+		    *p_node_ptr = get_node_pool().template edit_inner_node<true>(*p_editor, node_ptr, coord);
+		    co_return;
+		} */
 
 		std::array<Word, 9> unpacked_node = get_node_pool().get_unpacked_node_array(node_ptr);
 
@@ -84,7 +86,6 @@ private:
 			                  ? get_node_pool().template upsert_inner_node<true>(
 			                        coord.level, get_node_pool().get_packed_node_inplace(unpacked_node), node_ptr)
 			                  : NodePointer<Word>::Null();
-
 		co_return;
 	}
 
