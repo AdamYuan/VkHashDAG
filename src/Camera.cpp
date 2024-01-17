@@ -67,8 +67,8 @@ void Camera::MoveControl(GLFWwindow *window, double delta) {
 	m_yaw -= offset_x;
 	m_pitch -= offset_y;
 
-	m_pitch = glm::clamp(m_pitch, -glm::pi<float>() * 0.5f, glm::pi<float>() * 0.5f);
-	m_yaw = glm::mod(m_yaw, glm::pi<float>() * 2);
+	m_pitch = glm::clamp(m_pitch, -glm::pi<float>() * .5f, glm::pi<float>() * .5f);
+	m_yaw = glm::mod(m_yaw, glm::pi<float>() * 2.f);
 
 	int w, h;
 	glfwGetWindowSize(window, &w, &h);

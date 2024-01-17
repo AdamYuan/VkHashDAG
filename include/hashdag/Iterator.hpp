@@ -16,6 +16,11 @@ concept Iterator = requires(T e, const T ce) {
 	e.Iterate(NodeCoord<Word>{});
 };
 
+template <typename T, typename Word>
+concept ThreadedIterator = Editor<T, Word> && requires(const T ce) {
+	{ ce.GetAffectedExtent(NodeCoord<Word>{}) } -> std::convertible_to<uint64_t>;
+};
+
 } // namespace hashdag
 
 #endif // VKHASHDAG_ITERATOR_HPP

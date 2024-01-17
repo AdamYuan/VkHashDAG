@@ -104,30 +104,30 @@ TEST_SUITE("NodePool") {
 	TEST_CASE("Test upsert()") {
 		MurmurNodePool pool(4);
 		std::vector<uint32_t> node0 = {0b11u, 0x23, 0x45};
-		auto ptr = pool.upsert_inner_node(0, node0, {});
+		auto ptr = pool.upsert_inner_node<false>(0, node0, {});
 		CHECK(ptr);
 
-		auto ptr2 = pool.upsert_inner_node(0, node0, {});
+		auto ptr2 = pool.upsert_inner_node<false>(0, node0, {});
 		CHECK(ptr2);
 		CHECK_EQ(*ptr, *ptr2);
 		CHECK_EQ(pool.bucket_words[*ptr / pool.GetConfig().GetWordsPerBucket()], 3);
 
 		std::vector<uint32_t> node1 = {0b110u, 0x23, 0x44};
-		auto ptr3 = pool.upsert_inner_node(0, node1, {});
+		auto ptr3 = pool.upsert_inner_node<false>(0, node1, {});
 		CHECK(ptr3);
 		CHECK_NE(*ptr, *ptr3);
 
-		auto ptr4 = pool.upsert_inner_node(1, node1, {});
+		auto ptr4 = pool.upsert_inner_node<false>(1, node1, {});
 		CHECK(ptr4);
 		CHECK_NE(*ptr4, *ptr3);
 
 		std::vector<uint32_t> node2 = {0b11111111u, 0x23, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0x01};
-		auto ptr5 = pool.upsert_inner_node(2, node2, {});
+		auto ptr5 = pool.upsert_inner_node<false>(2, node2, {});
 		CHECK(ptr5);
 		CHECK_EQ(pool.bucket_words[*ptr5 / pool.GetConfig().GetWordsPerBucket()], 9);
 
 		std::array<uint32_t, 2> leaf0 = {0x23, 0x55};
-		auto ptr6 = pool.upsert_leaf(3, leaf0, {});
+		auto ptr6 = pool.upsert_leaf<false>(3, leaf0, {});
 		CHECK(ptr6);
 		CHECK_EQ(pool.bucket_words[*ptr6 / pool.GetConfig().GetWordsPerBucket()], 2);
 	}
@@ -136,7 +136,7 @@ TEST_SUITE("NodePool") {
 		uint32_t cnt = 0;
 		while (true) {
 			std::vector<uint32_t> node = {0b11u, cnt, 0x45};
-			auto ptr = pool.upsert_inner_node(0, node, {});
+			auto ptr = pool.upsert_inner_node<false>(0, node, {});
 			if (!ptr)
 				break;
 			CHECK(((*ptr % pool.GetConfig().GetWordsPerPage()) % 3 == 0));

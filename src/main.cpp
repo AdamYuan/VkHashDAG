@@ -12,16 +12,30 @@
 
 constexpr uint32_t kFrameCount = 3;
 
+bool cursor_captured = false;
+void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods) {
+	if (action != GLFW_PRESS)
+		return;
+	if (key == GLFW_KEY_ESCAPE) {
+		cursor_captured ^= 1;
+		glfwSetInputMode(window, GLFW_CURSOR, cursor_captured ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+	}
+}
+
 struct AABBEditor {
 	uint32_t level;
 	hashdag::Vec3<uint32_t> aabb_min, aabb_max;
-	inline bool IsAffected(const hashdag::NodeCoord<uint32_t> &coord) const {
+	inline hashdag::EditType EditNode(const hashdag::NodeCoord<uint32_t> &coord) const {
 		auto lb = coord.GetLowerBoundAtLevel(level), ub = coord.GetUpperBoundAtLevel(level);
 		/* printf("(%d %d %d), (%d, %d, %d) -> %d\n", lb.x, lb.y, lb.z, ub.x, ub.y, ub.z,
 		       !ub.Any(std::less_equal<uint32_t>{}, aabb_min) && !lb.Any(std::greater_equal<uint32_t>{}, aabb_max)); */
-		return !ub.Any(std::less_equal<uint32_t>{}, aabb_min) && !lb.Any(std::greater_equal<uint32_t>{}, aabb_max);
+		if (ub.Any(std::less_equal<uint32_t>{}, aabb_min) || lb.Any(std::greater_equal<uint32_t>{}, aabb_max))
+			return hashdag::EditType::kNotAffected;
+		if (lb.All(std::greater_equal<uint32_t>{}, aabb_min) && ub.All(std::less_equal<uint32_t>{}, aabb_max))
+			return hashdag::EditType::kFill;
+		return hashdag::EditType::kAffected;
 	}
-	inline bool Edit(const hashdag::NodeCoord<uint32_t> &coord, bool voxel) const {
+	inline bool EditVoxel(const hashdag::NodeCoord<uint32_t> &coord, bool voxel) const {
 		/*if (coord.pos.All(std::greater_equal<uint32_t>{}, aabb_min) && coord.pos.All(std::less<uint32_t>{}, aabb_max))
 		    printf("(%d %d %d)\n", coord.pos.x, coord.pos.y, coord.pos.z);
 		*/
@@ -32,6 +46,7 @@ struct AABBEditor {
 
 int main() {
 	GLFWwindow *window = myvk::GLFWCreateWindow("Test", 640, 480, true);
+	glfwSetKeyCallback(window, key_callback);
 
 	myvk::Ptr<myvk::Device> device;
 	myvk::Ptr<myvk::Queue> generic_queue, sparse_queue;
@@ -61,7 +76,7 @@ int main() {
 	}
 
 	auto dag_node_pool =
-	    myvk::MakePtr<DAGNodePool>(generic_queue, sparse_queue, hashdag::Config<uint32_t>::MakeDefault(10, 9, 11, 0));
+	    myvk::MakePtr<DAGNodePool>(generic_queue, sparse_queue, hashdag::Config<uint32_t>::MakeDefault(17, 9, 11, 0));
 	dag_node_pool->SetRoot(
 	    dag_node_pool->Edit(dag_node_pool->GetRoot(), AABBEditor{
 	                                                      .level = dag_node_pool->GetConfig().GetLowestLevel(),
@@ -71,8 +86,8 @@ int main() {
 	dag_node_pool->SetRoot(
 	    dag_node_pool->Edit(dag_node_pool->GetRoot(), AABBEditor{
 	                                                      .level = dag_node_pool->GetConfig().GetLowestLevel(),
-	                                                      .aabb_min = {4, 4, 4},
-	                                                      .aabb_max = {511, 511, 511},
+	                                                      .aabb_min = {3, 3, 3},
+	                                                      .aabb_max = {5110, 5110, 5110},
 	                                                  }));
 	auto fence = myvk::Fence::Create(device);
 	dag_node_pool->Flush({}, {}, fence);
@@ -99,7 +114,8 @@ int main() {
 		double time = glfwGetTime(), delta = time - prev_time;
 		prev_time = time;
 
-		camera->DragControl(window, float(delta));
+		if (cursor_captured)
+			camera->MoveControl(window, float(delta));
 
 		myvk::ImGuiNewFrame();
 		ImGui::Begin("Test");

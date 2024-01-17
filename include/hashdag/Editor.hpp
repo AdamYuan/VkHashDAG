@@ -11,10 +11,23 @@
 
 namespace hashdag {
 
+enum class EditType { kNotAffected, kAffected, kFill, kClear };
+
 template <typename T, typename Word>
 concept Editor = requires(const T ce) {
-	{ ce.IsAffected(NodeCoord<Word>{}) } -> std::convertible_to<bool>;
-	{ ce.Edit(NodeCoord<Word>{}, bool{}) } -> std::convertible_to<bool>;
+	{ ce.EditNode(NodeCoord<Word>{}) } -> std::convertible_to<EditType>;
+	{ ce.EditVoxel(NodeCoord<Word>{}, bool{}) } -> std::convertible_to<bool>;
+};
+
+struct FillEditor {
+	inline static EditType EditNode(auto &&) { return EditType::kFill; }
+	inline static bool EditVoxel(auto &&, auto &&) { return true; }
+};
+
+template <typename T, typename Word>
+concept ThreadedEditor = Editor<T, Word> && requires(const T ce) {
+	{ ce.GetAffectedExtent(NodeCoord<Word>{}) } -> std::convertible_to<uint64_t>;
+	{ ce.GetJobLowestLevel() } -> std::convertible_to<Word>;
 };
 
 } // namespace hashdag

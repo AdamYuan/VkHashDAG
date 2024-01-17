@@ -17,6 +17,11 @@ struct StackItem {
 } stack[STACK_SIZE];
 
 uint DAG_GetLeafFirstChildBits(in const uint node) {
+	/* uvec2 l = uvec2(uDAG[node], uDAG[node + 1]);
+	l |= l >> 1;
+	l |= l >> 2;
+	l |= l >> 4;
+	l &= 0x01010101u; */
 	uint l0 = uDAG[node], l1 = uDAG[node + 1];
 	return ((l0 & 0x000000FFu) == 0u ? 0u : 0x01u) | ((l0 & 0x0000FF00u) == 0u ? 0u : 0x02u) |
 	       ((l0 & 0x00FF0000u) == 0u ? 0u : 0x04u) | ((l0 & 0xFF000000u) == 0u ? 0u : 0x08u) |
@@ -56,11 +61,11 @@ bool DAG_RayMarchLeaf(uint root, vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm
 	uint parent = root, child_bits = 0u;
 	vec3 pos = vec3(1.0);
 	uint idx = 0u;
-	if (1.5f * t_coef.x - t_bias.x > t_min)
+	if (1.5 * t_coef.x - t_bias.x > t_min)
 		idx ^= 1u, pos.x = 1.5;
-	if (1.5f * t_coef.y - t_bias.y > t_min)
+	if (1.5 * t_coef.y - t_bias.y > t_min)
 		idx ^= 2u, pos.y = 1.5;
-	if (1.5f * t_coef.z - t_bias.z > t_min)
+	if (1.5 * t_coef.z - t_bias.z > t_min)
 		idx ^= 4u, pos.z = 1.5;
 
 	uint scale = STACK_SIZE - 1;
@@ -216,7 +221,7 @@ void main() {
 
 	vec3 pos, norm;
 	uint iter;
-	bool hit = DAG_RayMarchLeaf(uDAGRoot, o, d, pos, norm, iter);
+	bool hit = DAG_RayMarchLeaf(uDAGRoot, o + 1.0, d, pos, norm, iter);
 
 	oColor = hit ? vec4(norm * .5 + .5, 1.0) : vec4(0, 0, 0, 1);
 	// oColor = vec4(Heat(float(iter) / 128.0), 1.0);
