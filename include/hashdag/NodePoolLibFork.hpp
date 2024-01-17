@@ -11,6 +11,7 @@
 #include "Hasher.hpp"
 #include "NodePool.hpp"
 
+#include <libfork/schedule/busy_pool.hpp>
 #include <libfork/task.hpp>
 
 namespace hashdag {
@@ -25,27 +26,15 @@ private:
 	}
 
 	template <lf::context Context>
-	inline lf::basic_task<void, Context> lf_edit_inner_node(Editor<Word> auto &editor, NodePointer<Word> *p_node_ptr,
-	                                                        NodeCoord<Word> coord) {
-		EditType edit_type = editor.EditNode(coord);
-		if (edit_type == EditType::kNotAffected)
-			co_return;
-		if (edit_type == EditType::kClear) {
-			*p_node_ptr = NodePointer<Word>::Null();
-			co_return;
-		}
-		if (edit_type == EditType::kFill) {
-			*p_node_ptr = get_node_pool().m_filled_node_pointers[coord.level];
-			co_return;
-		}
-
+	lf::basic_task<void, Context> lf_edit_inner_node(const Editor<Word> auto *p_editor, NodePointer<Word> *p_node_ptr,
+	                                                 NodeCoord<Word> coord) {
 		NodePointer<Word> node_ptr = *p_node_ptr;
 		if (coord.level == get_node_pool().m_config.GetNodeLevels() - 1) {
-			*p_node_ptr = get_node_pool().template edit_leaf<true>(editor, node_ptr, coord);
+			*p_node_ptr = get_node_pool().template edit_leaf<true>(*p_editor, node_ptr, coord);
 			co_return;
 		}
 		if (coord.level > 10) {
-			*p_node_ptr = get_node_pool().template edit_inner_node<true>(editor, node_ptr, coord);
+			*p_node_ptr = get_node_pool().template edit_inner_node<true>(*p_editor, node_ptr, coord);
 			co_return;
 		}
 
@@ -54,14 +43,30 @@ private:
 		Word &child_mask = unpacked_node[0];
 		std::span<Word, 8> children = std::span<Word, 9>{unpacked_node}.template subspan<1>();
 
-		std::array<NodePointer<Word>, 8> new_children;
+		auto new_children = std::make_unique_for_overwrite<NodePointer<Word>[]>(8);
 		for (Word i = 0; i < 8; ++i)
 			new_children[i] = children[i];
 
-		for (Word i = 0; i < 7; ++i)
-			co_await lf_edit_inner_node<Context>(editor, new_children.data() + i, coord.GetChildCoord(i)).fork();
-		co_await lf_edit_inner_node<Context>(editor, new_children.data() + 7, coord.GetChildCoord(7));
+#define CHILD(I, POST) \
+	do { \
+		NodeCoord<Word> child_coord = coord.GetChildCoord(I); \
+		EditType child_edit_type = p_editor->EditNode(child_coord); \
+		if (child_edit_type == EditType::kClear) \
+			new_children[I] = NodePointer<Word>::Null(); \
+		else if (child_edit_type == EditType::kFill) \
+			new_children[I] = get_node_pool().m_filled_node_pointers[child_coord.level]; \
+		else if (child_edit_type == EditType::kAffected) \
+			co_await lf_edit_inner_node<Context>(p_editor, new_children.get() + I, child_coord) POST; \
+	} while (0)
 
+		CHILD(0, .fork());
+		CHILD(1, .fork());
+		CHILD(2, .fork());
+		CHILD(3, .fork());
+		CHILD(4, .fork());
+		CHILD(5, .fork());
+		CHILD(6, .fork());
+		CHILD(7, );
 		co_await lf::join();
 
 		bool changed = false;
@@ -86,11 +91,18 @@ private:
 public:
 	inline NodePoolLibFork() { static_assert(std::is_base_of_v<NodePoolBase<Derived, Word, WordSpanHasher>, Derived>); }
 
-	template <typename LibForkPool>
-	inline NodePointer<Word> EditLibFork(LibForkPool *p_lf_pool, NodePointer<Word> root_ptr,
+	inline NodePointer<Word> EditLibFork(lf::busy_pool *p_lf_pool, NodePointer<Word> root_ptr,
 	                                     const Editor<Word> auto &editor) {
 		get_node_pool().make_filled_node_pointers();
-		p_lf_pool->schedule(lf_edit_inner_node<typename LibForkPool::context>(editor, &root_ptr, NodeCoord<Word>{}));
+
+		EditType edit_type = editor.EditNode({});
+		if (edit_type == EditType::kNotAffected)
+			return root_ptr;
+		if (edit_type == EditType::kClear)
+			return NodePointer<Word>::Null();
+		if (edit_type == EditType::kFill)
+			return get_node_pool().m_filled_node_pointers[0];
+		p_lf_pool->schedule(lf_edit_inner_node<lf::busy_pool::context>(&editor, &root_ptr, NodeCoord<Word>{}));
 		return root_ptr;
 	}
 };
