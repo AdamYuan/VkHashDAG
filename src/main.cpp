@@ -44,6 +44,13 @@ struct AABBEditor {
 	}
 };
 
+template <typename Func> inline long ns(Func &&func) {
+	auto begin = std::chrono::high_resolution_clock::now();
+	func();
+	auto end = std::chrono::high_resolution_clock::now();
+	return std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count();
+}
+
 int main() {
 	GLFWwindow *window = myvk::GLFWCreateWindow("Test", 640, 480, true);
 	glfwSetKeyCallback(window, key_callback);
@@ -75,23 +82,33 @@ int main() {
 		render_pass = myvk::RenderPass::Create(device, state);
 	}
 
-	auto dag_node_pool =
-	    myvk::MakePtr<DAGNodePool>(generic_queue, sparse_queue, hashdag::Config<uint32_t>::MakeDefault(17, 9, 11, 0));
-	dag_node_pool->SetRoot(
-	    dag_node_pool->Edit(dag_node_pool->GetRoot(), AABBEditor{
-	                                                      .level = dag_node_pool->GetConfig().GetLowestLevel(),
-	                                                      .aabb_min = {0, 0, 0},
-	                                                      .aabb_max = {3, 2, 4},
-	                                                  }));
-	dag_node_pool->SetRoot(
-	    dag_node_pool->Edit(dag_node_pool->GetRoot(), AABBEditor{
-	                                                      .level = dag_node_pool->GetConfig().GetLowestLevel(),
-	                                                      .aabb_min = {3, 3, 3},
-	                                                      .aabb_max = {5110, 5110, 5110},
-	                                                  }));
-	auto fence = myvk::Fence::Create(device);
-	dag_node_pool->Flush({}, {}, fence);
-	fence->Wait();
+	// auto dag_node_pool =
+	//      myvk::MakePtr<DAGNodePool>(generic_queue, sparse_queue, hashdag::Config<uint32_t>::MakeDefault(17, 9, 11,
+	//      0));
+
+	auto dag_node_pool = myvk::MakePtr<DAGNodePool>(generic_queue, sparse_queue,
+	                                                hashdag::Config<uint32_t>::MakeDefault(17, 9, 14, 0, 7, 13));
+	auto edit_ns = ns([&]() {
+		dag_node_pool->SetRoot(
+		    dag_node_pool->Edit(dag_node_pool->GetRoot(), AABBEditor{
+		                                                      .level = dag_node_pool->GetConfig().GetLowestLevel(),
+		                                                      .aabb_min = {0, 0, 0},
+		                                                      .aabb_max = {5000, 5000, 5000},
+		                                                  }));
+		dag_node_pool->SetRoot(
+		    dag_node_pool->Edit(dag_node_pool->GetRoot(), AABBEditor{
+		                                                      .level = dag_node_pool->GetConfig().GetLowestLevel(),
+		                                                      .aabb_min = {1001, 1000, 1000},
+		                                                      .aabb_max = {10000, 10000, 10000},
+		                                                  }));
+	});
+	printf("edit cost %lf ms\n", (double)edit_ns / 1000000.0);
+	auto flush_ns = ns([&]() {
+		auto fence = myvk::Fence::Create(device);
+		dag_node_pool->Flush({}, {}, fence);
+		fence->Wait();
+	});
+	printf("flush cost %lf ms\n", (double)flush_ns / 1000000.0);
 
 	auto camera = myvk::MakePtr<Camera>();
 	camera->m_speed = 0.25f;

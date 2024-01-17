@@ -45,7 +45,7 @@ public:
 #endif
 	Config<Word> m_config;
 	std::vector<Word> m_bucket_level_bases;
-	std::vector<NodePointer<Word>> m_filled_node_pointers; // Should never be garbage collected
+	std::vector<NodePointer<Word>> m_filled_node_pointers; // Should be preserved when GC
 
 	inline const Word *read_page(Word page_id) const { return static_cast<const Derived *>(this)->ReadPage(page_id); }
 	inline void zero_page(Word page_id, Word page_offset, Word zero_words) {
@@ -220,6 +220,30 @@ public:
 		return upsert_node<ThreadSafe>(get_node_words, level, leaf_span, fallback_ptr);
 	}
 
+	inline void make_filled_node_pointers() {
+		if (!m_filled_node_pointers.empty())
+			return;
+
+		m_filled_node_pointers.resize(m_config.GetNodeLevels());
+
+		{
+			std::array<Word, Config<Word>::kWordsPerLeaf> leaf;
+			std::fill(leaf.begin(), leaf.end(), Word(-1));
+			m_filled_node_pointers.back() =
+			    upsert_leaf<false>(m_config.GetNodeLevels() - 1, leaf, NodePointer<Word>::Null());
+		}
+
+		if (m_config.GetNodeLevels() == 1)
+			return;
+
+		for (Word l = m_config.GetNodeLevels() - 2u; ~l; --l) {
+			Word prev_node = *m_filled_node_pointers[l + 1];
+			std::array<Word, 9> node = {0xFFu,     prev_node, prev_node, prev_node, prev_node,
+			                            prev_node, prev_node, prev_node, prev_node};
+			m_filled_node_pointers[l] = upsert_inner_node<false>(l, node, NodePointer<Word>::Null());
+		}
+	}
+
 	inline static void foreach_child_index(Word child_mask, auto &&func) {
 		while (child_mask) {
 			Word child_idx = std::countr_zero(child_mask);
@@ -255,30 +279,6 @@ public:
 		std::array<Word, Config<Word>::kWordsPerLeaf> leaf;
 		std::copy(p_leaf, p_leaf + Config<Word>::kWordsPerLeaf, leaf.data());
 		return leaf;
-	}
-
-	inline void make_filled_node_pointers() {
-		if (!m_filled_node_pointers.empty())
-			return;
-
-		m_filled_node_pointers.resize(m_config.GetNodeLevels());
-
-		{
-			std::array<Word, Config<Word>::kWordsPerLeaf> leaf;
-			std::fill(leaf.begin(), leaf.end(), Word(-1));
-			m_filled_node_pointers.back() =
-			    upsert_leaf<false>(m_config.GetNodeLevels() - 1, leaf, NodePointer<Word>::Null());
-		}
-
-		if (m_config.GetNodeLevels() == 1)
-			return;
-
-		for (Word l = m_config.GetNodeLevels() - 2u; ~l; --l) {
-			Word prev_node = *m_filled_node_pointers[l + 1];
-			std::array<Word, 9> node = {0xFFu,     prev_node, prev_node, prev_node, prev_node,
-			                            prev_node, prev_node, prev_node, prev_node};
-			m_filled_node_pointers[l] = upsert_inner_node<false>(l, node, NodePointer<Word>::Null());
-		}
 	}
 
 	template <bool ThreadSafe>
@@ -344,7 +344,9 @@ public:
 	}
 
 	inline NodePointer<Word> edit_inner_node_threaded(const Editor<Word> auto &editor, NodePointer<Word> node_ptr,
-	                                                  const NodeCoord<Word> &coord, auto &&async_runner) {}
+	                                                  const NodeCoord<Word> &coord, auto &&async_runner) {
+
+	}
 
 	inline void iterate_leaf(Iterator<Word> auto *p_iterator, NodePointer<Word> leaf_ptr,
 	                         const NodeCoord<Word> &coord) const {
