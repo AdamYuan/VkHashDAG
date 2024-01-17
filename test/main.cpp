@@ -2,6 +2,8 @@
 #include "doctest.h"
 
 #include <hashdag/NodePool.hpp>
+#include <hashdag/NodePoolLibFork.hpp>
+
 #include <unordered_map>
 #include <unordered_set>
 
@@ -27,7 +29,7 @@ struct AABBEditor {
 		    printf("(%d %d %d)\n", coord.pos.x, coord.pos.y, coord.pos.z);
 		*/
 		return voxel || coord.pos.All(std::greater_equal<uint32_t>{}, aabb_min) &&
-		                coord.pos.All(std::less<uint32_t>{}, aabb_max);
+		                    coord.pos.All(std::less<uint32_t>{}, aabb_max);
 	}
 };
 
@@ -74,10 +76,13 @@ struct ZeroNodePool final : public hashdag::NodePoolBase<ZeroNodePool, uint32_t,
 		          memory.data() + ((page_id << GetConfig().word_bits_per_page) | page_offset));
 	}
 };
-struct MurmurNodePool final : public hashdag::NodePoolBase<MurmurNodePool, uint32_t, hashdag::MurmurHasher32> {
+struct MurmurNodePool final : public hashdag::NodePoolBase<MurmurNodePool, uint32_t, hashdag::MurmurHasher32>,
+                              public hashdag::NodePoolLibFork<MurmurNodePool, uint32_t, hashdag::MurmurHasher32> {
 	std::vector<uint32_t> memory;
 	std::unordered_map<uint32_t, uint32_t> bucket_words;
 	std::unordered_set<uint32_t> pages;
+
+	std::array<hashdag::EditMutex, 1024> m_edit_mutexes{};
 
 	inline ~MurmurNodePool() final = default;
 	inline explicit MurmurNodePool(uint32_t level_count)
@@ -86,6 +91,9 @@ struct MurmurNodePool final : public hashdag::NodePoolBase<MurmurNodePool, uint3
 		memory.resize(GetConfig().GetTotalWords());
 	}
 
+	inline hashdag::EditMutex &GetBucketEditMutex(uint32_t bucket_id) {
+		return m_edit_mutexes[bucket_id % m_edit_mutexes.size()];
+	}
 	inline uint32_t GetBucketWords(uint32_t bucket_id) const {
 		auto it = bucket_words.find(bucket_id);
 		return it == bucket_words.end() ? 0 : it->second;
@@ -185,5 +193,13 @@ TEST_SUITE("NodePool") {
 		iter = SingleIterator{.level = pool.GetConfig().GetLowestLevel(), .pos = {4, 3, 3}, .exist = false};
 		pool.Iterate(root4, &iter);
 		CHECK(iter.exist);
+	}
+	TEST_CASE("Test EditLibFork()") {
+		lf::busy_pool busy_pool(12);
+
+		MurmurNodePool pool(6);
+		auto root = pool.EditLibFork(
+		    &busy_pool, {}, AABBEditor{.level = pool.GetConfig().GetLowestLevel(), .aabb_min = {}, .aabb_max{43, 21, 3}});
+		CHECK(root);
 	}
 }
