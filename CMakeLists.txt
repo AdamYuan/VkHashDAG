@@ -28,7 +28,10 @@ if (CMAKE_BUILD_TYPE STREQUAL "Release")
     endif ()
 endif ()
 
-add_subdirectory(dep)
+add_subdirectory(dep/MyVK)
+add_subdirectory(dep/glm)
+add_subdirectory(dep/libfork)
+
 add_subdirectory(shader)
 
 add_executable(VkHashDAG
@@ -39,9 +42,7 @@ add_executable(VkHashDAG
         src/DAGRenderer.cpp
 )
 target_include_directories(VkHashDAG PRIVATE include)
-
-find_package(Threads REQUIRED)
-target_link_libraries(VkHashDAG PRIVATE dep shader Threads::Threads)
+target_link_libraries(VkHashDAG PRIVATE myvk::vulkan myvk::glfw myvk::imgui glm libfork::libfork shader)
 
 install(TARGETS VkHashDAG RUNTIME DESTINATION)
 
@@ -50,3 +51,4 @@ add_executable(HashDAGTest
 )
 target_include_directories(HashDAGTest PRIVATE include)
 target_compile_definitions(HashDAGTest PRIVATE -DHASHDAG_TEST)
+target_link_libraries(HashDAGTest PRIVATE libfork::libfork)

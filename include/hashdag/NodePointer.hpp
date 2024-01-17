@@ -15,19 +15,19 @@ private:
 	Word m_node;
 
 public:
-	inline NodePointer() : m_node(-1) {}
-	inline NodePointer(Word node) : m_node{node} {}
+	inline constexpr NodePointer() : m_node(-1) {}
+	inline constexpr NodePointer(Word node) : m_node{node} {}
 
-	inline bool HasValue() const { return m_node != -1; }
-	inline operator bool() const { return HasValue(); }
+	inline constexpr bool HasValue() const { return m_node != -1; }
+	inline constexpr operator bool() const { return HasValue(); }
 
-	inline bool operator==(NodePointer r) const { return m_node == r.m_node; }
-	inline bool operator!=(NodePointer r) const { return m_node != r.m_node; }
+	inline constexpr bool operator==(NodePointer r) const { return m_node == r.m_node; }
+	inline constexpr bool operator!=(NodePointer r) const { return m_node != r.m_node; }
 
-	inline Word Value() const { return m_node; }
-	inline Word operator*() const { return Value(); }
+	inline constexpr Word Value() const { return m_node; }
+	inline constexpr Word operator*() const { return Value(); }
 
-	inline static NodePointer Null() { return {}; }
+	inline constexpr static NodePointer Null() { return NodePointer{}; }
 };
 
 } // namespace hashdag

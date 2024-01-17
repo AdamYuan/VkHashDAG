@@ -33,7 +33,7 @@ concept NodePool = requires(T e, const T ce) {
 };
 
 template <typename T, typename Word>
-concept ThreadedEditableNodePool = NodePool<T, Word> && requires(T e, const T ce) {
+concept ThreadSafeEditNodePool = NodePool<T, Word> && requires(T e, const T ce) {
 	{ e.GetBucketEditMutex(Word{} /* Bucket Index */) } -> std::convertible_to<EditMutex &>;
 };
 
@@ -43,6 +43,9 @@ private:
 #else
 public:
 #endif
+
+	template <typename, std::unsigned_integral Word_, Hasher<Word_>> friend class NodePoolLibFork;
+
 	Config<Word> m_config;
 	std::vector<Word> m_bucket_level_bases;
 	std::vector<NodePointer<Word>> m_filled_node_pointers; // Should be preserved when GC
@@ -58,6 +61,7 @@ public:
 		return static_cast<const Derived *>(this)->GetBucketWords(bucket_id);
 	}
 	inline EditMutex &get_bucket_edit_mutex(Word bucket_id) {
+		static_assert(ThreadSafeEditNodePool<Derived, Word>);
 		return static_cast<Derived *>(this)->GetBucketEditMutex(bucket_id);
 	}
 	inline void set_bucket_words(Word bucket_id, Word words) {
@@ -180,7 +184,7 @@ public:
 				if (find_node_ptr)
 					return find_node_ptr;
 
-				NodePointer<Word> append_node_ptr = append_node(bucket_index, node_span);
+				NodePointer<Word> append_node_ptr = append_node(bucket_index, unique_bucket_words, node_span);
 				return append_node_ptr ? append_node_ptr : fallback_ptr;
 			}
 		} else {
@@ -260,14 +264,32 @@ public:
 	}
 	inline std::array<Word, 9> get_unpacked_node_array(NodePointer<Word> node_ptr) const {
 		if (!node_ptr)
-			return {};
+			return {0,
+			        *NodePointer<Word>::Null(),
+			        *NodePointer<Word>::Null(),
+			        *NodePointer<Word>::Null(),
+			        *NodePointer<Word>::Null(),
+			        *NodePointer<Word>::Null(),
+			        *NodePointer<Word>::Null(),
+			        *NodePointer<Word>::Null(),
+			        *NodePointer<Word>::Null()};
+
 		const Word *p_node = read_node(*node_ptr);
 		Word child_mask = *p_node;
 		const Word *p_next_child = p_node + 1;
 
-		std::array<Word, 9> unpacked_node = {child_mask};
+		std::array<Word, 9> unpacked_node = {
+		    child_mask,
+		    *NodePointer<Word>::Null(),
+		    *NodePointer<Word>::Null(),
+		    *NodePointer<Word>::Null(),
+		    *NodePointer<Word>::Null(),
+		    *NodePointer<Word>::Null(),
+		    *NodePointer<Word>::Null(),
+		    *NodePointer<Word>::Null(),
+		    *NodePointer<Word>::Null(),
+		};
 		Word *p_children = unpacked_node.data() + 1;
-
 		foreach_child_index(child_mask, [&](Word child_idx) { p_children[child_idx] = *(p_next_child++); });
 
 		return unpacked_node;
@@ -306,6 +328,8 @@ public:
 		                                       : upsert_leaf<ThreadSafe>(coord.level, leaf, leaf_ptr))
 		               : leaf_ptr;
 	}
+
+	template <bool ThreadSafe>
 	inline NodePointer<Word> edit_inner_node(const Editor<Word> auto &editor, NodePointer<Word> node_ptr,
 	                                         const NodeCoord<Word> &coord) {
 		switch (editor.EditNode(coord)) {
@@ -319,7 +343,7 @@ public:
 		}
 
 		if (coord.level == m_config.GetNodeLevels() - 1)
-			return edit_leaf<false>(editor, node_ptr, coord);
+			return edit_leaf<ThreadSafe>(editor, node_ptr, coord);
 
 		std::array<Word, 9> unpacked_node = get_unpacked_node_array(node_ptr);
 		Word &child_mask = unpacked_node[0];
@@ -328,24 +352,19 @@ public:
 		bool changed = false;
 
 		for (Word i = 0; i < 8; ++i) {
-			NodePointer<Word> child_ptr =
-			    ((child_mask >> i) & 1u) ? NodePointer<Word>{children[i]} : NodePointer<Word>::Null();
-			NodePointer<Word> new_child_ptr = edit_inner_node(editor, child_ptr, coord.GetChildCoord(i));
+			NodePointer<Word> child_ptr{children[i]};
+			NodePointer<Word> new_child_ptr = edit_inner_node<ThreadSafe>(editor, child_ptr, coord.GetChildCoord(i));
 
 			changed |= new_child_ptr != child_ptr;
 			children[i] = *new_child_ptr;
 			child_mask ^= (Word{bool(new_child_ptr) != bool(child_ptr)} << i); // Flip if occurrence changed
 		}
 
-		return changed ? (child_mask
-		                      ? upsert_inner_node<false>(coord.level, get_packed_node_inplace(unpacked_node), node_ptr)
-		                      : NodePointer<Word>::Null())
-		               : node_ptr;
-	}
-
-	inline NodePointer<Word> edit_inner_node_threaded(const Editor<Word> auto &editor, NodePointer<Word> node_ptr,
-	                                                  const NodeCoord<Word> &coord, auto &&async_runner) {
-
+		return changed
+		           ? (child_mask
+		                  ? upsert_inner_node<ThreadSafe>(coord.level, get_packed_node_inplace(unpacked_node), node_ptr)
+		                  : NodePointer<Word>::Null())
+		           : node_ptr;
 	}
 
 	inline void iterate_leaf(Iterator<Word> auto *p_iterator, NodePointer<Word> leaf_ptr,
@@ -388,19 +407,10 @@ public:
 	inline const auto &GetConfig() const { return m_config; }
 	inline NodePointer<Word> Edit(NodePointer<Word> root_ptr, const Editor<Word> auto &editor) {
 		make_filled_node_pointers();
-		return edit_inner_node(editor, root_ptr, {});
-	}
-	inline NodePointer<Word> EditThreaded(NodePointer<Word> root_ptr, const Editor<Word> auto &editor,
-	                                      auto &&async_run = std::async) {
-		make_filled_node_pointers();
-		return edit_inner_node_threaded(editor, root_ptr, {}, std::forward(async_run));
+		return edit_inner_node<false>(editor, root_ptr, {});
 	}
 	inline void Iterate(NodePointer<Word> root_ptr, Iterator<Word> auto *p_iterator) const {
 		iterate_inner_node(p_iterator, root_ptr, {});
-	}
-	inline void IterateThreaded(NodePointer<Word> root_ptr, Iterator<Word> auto *p_iterator,
-	                            auto &&async_run = std::async) const {
-		iterate_inner_node_threaded(p_iterator, root_ptr, {}, std::forward(async_run));
 	}
 };
 

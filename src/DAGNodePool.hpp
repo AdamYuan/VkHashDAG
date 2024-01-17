@@ -7,20 +7,26 @@
 #define VKHASHDAG_VKNODEPOOL_HPP
 
 #include <hashdag/NodePool.hpp>
+#include <hashdag/NodePoolLibFork.hpp>
 #include <memory>
 #include <myvk/Buffer.hpp>
 #include <myvk/DescriptorSet.hpp>
 #include <myvk/Fence.hpp>
 #include <myvk/Semaphore.hpp>
 
-class DAGNodePool final : public hashdag::NodePoolBase<DAGNodePool, uint32_t, hashdag::MurmurHasher32> {
+class DAGNodePool final : public hashdag::NodePoolBase<DAGNodePool, uint32_t, hashdag::MurmurHasher32>,
+                          public hashdag::NodePoolLibFork<DAGNodePool, uint32_t, hashdag::MurmurHasher32> {
 private:
 	std::vector<uint32_t> m_bucket_words;
 	std::vector<std::unique_ptr<uint32_t[]>> m_pages;
+	std::array<hashdag::EditMutex, 1024> m_edit_mutexes{};
 
 	// Functions for hashdag::NodePoolBase
 	friend class hashdag::NodePoolBase<DAGNodePool, uint32_t, hashdag::MurmurHasher32>;
 
+	inline hashdag::EditMutex &GetBucketEditMutex(uint32_t bucket_id) {
+		return m_edit_mutexes[bucket_id % m_edit_mutexes.size()];
+	}
 	inline uint32_t GetBucketWords(uint32_t bucket_id) const { return m_bucket_words[bucket_id]; }
 	inline void SetBucketWords(uint32_t bucket_id, uint32_t words) { m_bucket_words[bucket_id] = words; }
 	inline const uint32_t *ReadPage(uint32_t page_id) const { return m_pages[page_id].get(); }

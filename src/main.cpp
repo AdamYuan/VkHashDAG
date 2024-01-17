@@ -10,6 +10,8 @@
 #include "DAGRenderer.hpp"
 #include "GPSQueueSelector.hpp"
 
+#include <libfork/schedule/busy_pool.hpp>
+
 constexpr uint32_t kFrameCount = 3;
 
 bool cursor_captured = false;
@@ -51,6 +53,8 @@ template <typename Func> inline long ns(Func &&func) {
 	return std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count();
 }
 
+lf::busy_pool busy_pool(8);
+
 int main() {
 	GLFWwindow *window = myvk::GLFWCreateWindow("Test", 640, 480, true);
 	glfwSetKeyCallback(window, key_callback);
@@ -89,14 +93,14 @@ int main() {
 	auto dag_node_pool = myvk::MakePtr<DAGNodePool>(generic_queue, sparse_queue,
 	                                                hashdag::Config<uint32_t>::MakeDefault(17, 9, 14, 0, 7, 13));
 	auto edit_ns = ns([&]() {
-		dag_node_pool->SetRoot(
-		    dag_node_pool->Edit(dag_node_pool->GetRoot(), AABBEditor{
+		dag_node_pool->SetRoot(dag_node_pool->EditLibFork(&busy_pool, dag_node_pool->GetRoot(),
+		                                                  AABBEditor{
 		                                                      .level = dag_node_pool->GetConfig().GetLowestLevel(),
 		                                                      .aabb_min = {0, 0, 0},
 		                                                      .aabb_max = {5000, 5000, 5000},
 		                                                  }));
-		dag_node_pool->SetRoot(
-		    dag_node_pool->Edit(dag_node_pool->GetRoot(), AABBEditor{
+		dag_node_pool->SetRoot(dag_node_pool->EditLibFork(&busy_pool, dag_node_pool->GetRoot(),
+		                                                  AABBEditor{
 		                                                      .level = dag_node_pool->GetConfig().GetLowestLevel(),
 		                                                      .aabb_min = {1001, 1000, 1000},
 		                                                      .aabb_max = {10000, 10000, 10000},
