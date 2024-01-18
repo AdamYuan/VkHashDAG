@@ -31,7 +31,7 @@ public:
 
 	inline glm::vec3 GetLook() const {
 		float xz_len = glm::cos(m_pitch);
-		return glm::vec3{-xz_len * glm::sin(m_yaw), glm::sin(m_pitch), -xz_len * glm::cos(m_yaw)};
+		return glm::vec3{xz_len * glm::sin(m_yaw), glm::sin(m_pitch), xz_len * glm::cos(m_yaw)};
 	}
 	inline LookSideUp GetLookSideUp(float aspect_ratio) const {
 		auto trans = glm::identity<glm::mat4>();

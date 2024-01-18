@@ -138,7 +138,7 @@ int main() {
 	printf("flush cost %lf ms\n", (double)flush_ns / 1000000.0);
 
 	auto camera = myvk::MakePtr<Camera>();
-	camera->m_speed = 0.25f;
+	camera->m_speed = 0.01f;
 	auto dag_renderer = myvk::MakePtr<DAGRenderer>(dag_node_pool, render_pass, 0);
 
 	myvk::ImGuiInit(window, myvk::CommandPool::Create(generic_queue));
@@ -166,6 +166,11 @@ int main() {
 		ImGui::Text("%f", ImGui::GetIO().Framerate);
 		ImGui::End();
 		ImGui::Render();
+
+		std::optional<glm::vec3> p =
+		    dag_node_pool->GLMTraversal<float>(dag_node_pool->GetRoot(), camera->m_position, camera->GetLook());
+		if (p)
+			printf("%f %f %f\n", p->x, p->y, p->z);
 
 		if (frame_manager->NewFrame()) {
 			uint32_t image_index = frame_manager->GetCurrentImageIndex();

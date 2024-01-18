@@ -47,7 +47,8 @@ target_link_libraries(VkHashDAG PRIVATE
         myvk::vulkan myvk::glfw myvk::imgui
         libcuckoo::libcuckoo
         libfork::libfork
-        glm
+        glm::glm
+
         shader
 )
 

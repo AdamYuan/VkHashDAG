@@ -20,12 +20,6 @@ concept Editor = requires(const T ce) {
 	{ ce.EditVoxel(NodeCoord<Word>{}, bool{}) } -> std::convertible_to<bool>;
 };
 
-/* template <typename T, typename Word>
-concept ThreadedEditor = Editor<T, Word> && requires(const T ce) {
-    { ce.GetAffectedExtent(NodeCoord<Word>{}) } -> std::convertible_to<uint64_t>;
-    { ce.GetJobLowestLevel() } -> std::convertible_to<Word>;
-}; */
-
 } // namespace hashdag
 
 #endif // VKHASHDAG_EDITOR_HPP

@@ -8,6 +8,7 @@
 
 #include <cuckoohash_map.hh>
 #include <hashdag/NodePool.hpp>
+#include <hashdag/NodePoolGLMTraversal.hpp>
 #include <hashdag/NodePoolLibForkEdit.hpp>
 #include <memory>
 #include <myvk/Buffer.hpp>
@@ -16,7 +17,8 @@
 #include <myvk/Semaphore.hpp>
 
 class DAGNodePool final : public hashdag::NodePoolBase<DAGNodePool, uint32_t>,
-                          public hashdag::NodePoolLibForkEdit<DAGNodePool, uint32_t> {
+                          public hashdag::NodePoolLibForkEdit<DAGNodePool, uint32_t>,
+                          public hashdag::NodePoolGLMTraversal<DAGNodePool, uint32_t> {
 public:
 	using WordSpanHasher = hashdag::MurmurHasher32;
 

@@ -8,6 +8,33 @@ layout(push_constant) uniform uuPushConstant {
 	uint uWidth, uHeight, uDAGRoot, uDAGNodeLevels;
 };
 
+/*
+ *  Copyright (c) 2009-2011, NVIDIA Corporation
+ *  All rights reserved.
+ *
+ *  Redistribution and use in source and binary forms, with or without
+ *  modification, are permitted provided that the following conditions are met:
+ *      * Redistributions of source code must retain the above copyright
+ *        notice, this list of conditions and the following disclaimer.
+ *      * Redistributions in binary form must reproduce the above copyright
+ *        notice, this list of conditions and the following disclaimer in the
+ *        documentation and/or other materials provided with the distribution.
+ *      * Neither the name of NVIDIA Corporation nor the
+ *        names of its contributors may be used to endorse or promote products
+ *        derived from this software without specific prior written permission.
+ *
+ *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ *  ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ *  WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ *  DISCLAIMED. IN NO EVENT SHALL <COPYRIGHT HOLDER> BE LIABLE FOR ANY
+ *  DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ *  (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ *  LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ *  ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ *  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
 // STACK_SIZE equals to the fraction bits of float
 #define STACK_SIZE 23
 #define EPS 3.552713678800501e-15
@@ -35,28 +62,30 @@ bool DAG_RayMarchLeaf(uint root, vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm
 
 	uint iter = 0;
 
-	d.x = abs(d.x) > EPS ? d.x : (d.x >= 0 ? EPS : -EPS);
-	d.y = abs(d.y) > EPS ? d.y : (d.y >= 0 ? EPS : -EPS);
-	d.z = abs(d.z) > EPS ? d.z : (d.z >= 0 ? EPS : -EPS);
+	const float epsilon = uintBitsToFloat((127u - STACK_SIZE) << 23u); // exp2f(-STACK_SIZE)
+	d.x = abs(d.x) > epsilon ? d.x : (d.x >= 0 ? epsilon : -epsilon);
+	d.y = abs(d.y) > epsilon ? d.y : (d.y >= 0 ? epsilon : -epsilon);
+	d.z = abs(d.z) > epsilon ? d.z : (d.z >= 0 ? epsilon : -epsilon);
 
 	// Precompute the coefficients of tx(x), ty(y), and tz(z).
 	// The octree is assumed to reside at coordinates [1, 2].
 	vec3 t_coef = 1.0 / -abs(d);
 	vec3 t_bias = t_coef * o;
 
-	uint oct_mask = 0u;
+	uint octant_mask = 0u;
 	if (d.x > 0.0f)
-		oct_mask ^= 1u, t_bias.x = 3.0 * t_coef.x - t_bias.x;
+		octant_mask ^= 1u, t_bias.x = 3.0 * t_coef.x - t_bias.x;
 	if (d.y > 0.0f)
-		oct_mask ^= 2u, t_bias.y = 3.0 * t_coef.y - t_bias.y;
+		octant_mask ^= 2u, t_bias.y = 3.0 * t_coef.y - t_bias.y;
 	if (d.z > 0.0f)
-		oct_mask ^= 4u, t_bias.z = 3.0 * t_coef.z - t_bias.z;
+		octant_mask ^= 4u, t_bias.z = 3.0 * t_coef.z - t_bias.z;
 
 	// Initialize the active span of t-values.
 	float t_min = max(max(2.0 * t_coef.x - t_bias.x, 2.0 * t_coef.y - t_bias.y), 2.0 * t_coef.z - t_bias.z);
 	float t_max = min(min(t_coef.x - t_bias.x, t_coef.y - t_bias.y), t_coef.z - t_bias.z);
-	t_min = max(t_min, 0.0);
 	float h = t_max;
+	t_min = max(t_min, 0.0);
+	t_max = min(t_max, 1.0);
 
 	uint parent = root, child_bits = 0u;
 	vec3 pos = vec3(1.0);
@@ -85,7 +114,7 @@ bool DAG_RayMarchLeaf(uint root, vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm
 		vec3 t_corner = pos * t_coef - t_bias;
 		float tc_max = min(min(t_corner.x, t_corner.y), t_corner.z);
 
-		uint child_shift = idx ^ oct_mask; // permute child slots based on the mirroring
+		uint child_shift = idx ^ octant_mask; // permute child slots based on the mirroring
 		uint child_mask = 1u << child_shift;
 
 		if ((child_bits & child_mask) != 0 && t_min <= t_max) {
@@ -178,19 +207,19 @@ bool DAG_RayMarchLeaf(uint root, vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm
 	vec3 norm = (t_corner.x > t_corner.y && t_corner.x > t_corner.z)
 	                ? vec3(-1, 0, 0)
 	                : (t_corner.y > t_corner.z ? vec3(0, -1, 0) : vec3(0, 0, -1));
-	if ((oct_mask & 1u) == 0u)
+	if ((octant_mask & 1u) == 0u)
 		norm.x = -norm.x;
-	if ((oct_mask & 2u) == 0u)
+	if ((octant_mask & 2u) == 0u)
 		norm.y = -norm.y;
-	if ((oct_mask & 4u) == 0u)
+	if ((octant_mask & 4u) == 0u)
 		norm.z = -norm.z;
 
 	// Undo mirroring of the coordinate system.
-	if ((oct_mask & 1u) != 0u)
+	if ((octant_mask & 1u) != 0u)
 		pos.x = 3.0 - scale_exp2 - pos.x;
-	if ((oct_mask & 2u) != 0u)
+	if ((octant_mask & 2u) != 0u)
 		pos.y = 3.0 - scale_exp2 - pos.y;
-	if ((oct_mask & 4u) != 0u)
+	if ((octant_mask & 4u) != 0u)
 		pos.z = 3.0 - scale_exp2 - pos.z;
 
 	// Output results.

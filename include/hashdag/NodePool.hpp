@@ -319,10 +319,8 @@ public:
 			bool voxel = (leaf[i >> kWordBits] >> (i & kWordMask)) & 1u;
 			bool new_voxel = editor.EditVoxel(coord.GetLeafCoord(i), voxel);
 
-			if (new_voxel != voxel) {
-				changed = true;
-				leaf[i >> kWordBits] ^= (1u << (i & kWordMask)); // Flip
-			}
+			changed |= new_voxel != voxel;
+			leaf[i >> kWordBits] ^= (Word(new_voxel != voxel) << (i & kWordMask));
 		}
 
 		return changed ? (leaf == LeafArray{0} ? NodePointer<Word>::Null()
