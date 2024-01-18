@@ -124,7 +124,7 @@ bool DAG_RayMarchLeaf(uint root, vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm
 			vec3 t_center = half_scale_exp2 * t_coef + t_corner;
 
 			if (t_min <= tv_max) {
-				if (scale < leaf_scale) // leaf node
+				if (scale < leaf_scale) // leaf node TODO: skip subpixel voxels
 					break;
 
 				// PUSH

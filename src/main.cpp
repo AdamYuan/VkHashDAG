@@ -190,7 +190,7 @@ int main() {
 			return;
 		edit_future = edit_pool.submit_task([dag_node_pool, device, editor]() {
 			hashdag::NodePointer<uint32_t> new_root_ptr;
-			new_root_ptr = dag_node_pool->LibForkEdit(&busy_pool, dag_node_pool->GetRoot(), editor, 10);
+			new_root_ptr = dag_node_pool->LibForkEdit(&busy_pool, dag_node_pool->GetRoot(), editor);
 			auto fence = myvk::Fence::Create(device);
 			if (dag_node_pool->FlushMissingPages({}, {}, fence))
 				fence->Wait();
