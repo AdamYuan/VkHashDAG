@@ -97,13 +97,15 @@ int main() {
 		                                                      .level = dag_node_pool->GetConfig().GetLowestLevel(),
 		                                                      .aabb_min = {0, 0, 0},
 		                                                      .aabb_max = {5000, 5000, 5000},
-		                                                  }));
+		                                                  },
+		                                                  10));
 		dag_node_pool->SetRoot(dag_node_pool->EditLibFork(&busy_pool, dag_node_pool->GetRoot(),
 		                                                  AABBEditor{
 		                                                      .level = dag_node_pool->GetConfig().GetLowestLevel(),
 		                                                      .aabb_min = {1001, 1000, 1000},
 		                                                      .aabb_max = {10000, 10000, 10000},
-		                                                  }));
+		                                                  },
+		                                                  10));
 	});
 	printf("edit cost %lf ms\n", (double)edit_ns / 1000000.0);
 	auto flush_ns = ns([&]() {
