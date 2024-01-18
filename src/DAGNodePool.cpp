@@ -79,8 +79,10 @@ void DAGNodePool::create_descriptor() {
 
 void DAGNodePool::Flush(const myvk::SemaphoreGroup &wait_semaphores, const myvk::SemaphoreGroup &signal_semaphores,
                         const myvk::Ptr<myvk::Fence> &fence) {
+	auto gpu_write_ranges = m_gpu_write_ranges.lock_table();
+
 	std::unordered_set<uint32_t> missing_gpu_page_indices;
-	for (const auto &it : m_gpu_write_ranges) {
+	for (const auto &it : gpu_write_ranges) {
 		uint32_t page_id = it.first, gpu_page_id = page_id >> m_page_bits_per_gpu_page;
 		if (m_gpu_pages[gpu_page_id].allocation == VK_NULL_HANDLE)
 			missing_gpu_page_indices.insert(gpu_page_id);
@@ -138,7 +140,7 @@ void DAGNodePool::Flush(const myvk::SemaphoreGroup &wait_semaphores, const myvk:
 		                  fence ? fence->GetHandle() : VK_NULL_HANDLE);
 	}
 
-	for (const auto &it : m_gpu_write_ranges) {
+	for (const auto &it : gpu_write_ranges) {
 		uint32_t page_id = it.first, gpu_page_id = page_id >> m_page_bits_per_gpu_page;
 		const Range &range = it.second;
 
@@ -148,5 +150,5 @@ void DAGNodePool::Flush(const myvk::SemaphoreGroup &wait_semaphores, const myvk:
 		std::copy(m_pages[page_id].get() + range.begin, m_pages[page_id].get() + range.end,
 		          gpu_page.p_mapped_data + gpu_page_offset);
 	}
-	m_gpu_write_ranges.clear();
+	gpu_write_ranges.clear();
 }

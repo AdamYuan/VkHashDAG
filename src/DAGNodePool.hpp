@@ -6,6 +6,7 @@
 #ifndef VKHASHDAG_VKNODEPOOL_HPP
 #define VKHASHDAG_VKNODEPOOL_HPP
 
+#include <cuckoohash_map.hh>
 #include <hashdag/NodePool.hpp>
 #include <hashdag/NodePoolLibFork.hpp>
 #include <memory>
@@ -37,7 +38,9 @@ private:
 		if (!m_pages[page_id])
 			m_pages[page_id] = std::make_unique_for_overwrite<uint32_t[]>(GetConfig().GetWordsPerPage());
 		std::copy(word_span.begin(), word_span.end(), m_pages[page_id].get() + page_offset);
-		m_gpu_write_ranges[page_id].Union({page_offset, page_offset + (uint32_t)word_span.size()});
+
+		Range range = {page_offset, page_offset + (uint32_t)word_span.size()};
+		m_gpu_write_ranges.upsert(page_id, [range](Range &r, libcuckoo::UpsertContext) { r.Union(range); });
 	}
 
 	// Root
@@ -62,7 +65,7 @@ private:
 			end = std::max(end, r.end);
 		}
 	};
-	std::unordered_map<uint32_t, Range> m_gpu_write_ranges;
+	libcuckoo::cuckoohash_map<uint32_t, Range> m_gpu_write_ranges;
 
 	uint32_t m_page_bits_per_gpu_page;
 

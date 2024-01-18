@@ -31,6 +31,7 @@ endif ()
 add_subdirectory(dep/MyVK)
 add_subdirectory(dep/glm)
 add_subdirectory(dep/libfork)
+add_subdirectory(dep/libcuckoo)
 
 add_subdirectory(shader)
 
@@ -42,7 +43,13 @@ add_executable(VkHashDAG
         src/DAGRenderer.cpp
 )
 target_include_directories(VkHashDAG PRIVATE include)
-target_link_libraries(VkHashDAG PRIVATE myvk::vulkan myvk::glfw myvk::imgui glm libfork::libfork shader)
+target_link_libraries(VkHashDAG PRIVATE
+        myvk::vulkan myvk::glfw myvk::imgui
+        libcuckoo::libcuckoo
+        libfork::libfork
+        glm
+        shader
+)
 
 install(TARGETS VkHashDAG RUNTIME DESTINATION)
 

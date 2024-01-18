@@ -82,7 +82,7 @@ struct MurmurNodePool final : public hashdag::NodePoolBase<MurmurNodePool, uint3
 	std::unordered_map<uint32_t, uint32_t> bucket_words;
 	std::unordered_set<uint32_t> pages;
 
-	std::array<hashdag::EditMutex, 1024> m_edit_mutexes{};
+	hashdag::EditMutex m_edit_mutex{};
 
 	inline ~MurmurNodePool() final = default;
 	inline explicit MurmurNodePool(uint32_t level_count)
@@ -91,9 +91,7 @@ struct MurmurNodePool final : public hashdag::NodePoolBase<MurmurNodePool, uint3
 		memory.resize(GetConfig().GetTotalWords());
 	}
 
-	inline hashdag::EditMutex &GetBucketEditMutex(uint32_t bucket_id) {
-		return m_edit_mutexes[bucket_id % m_edit_mutexes.size()];
-	}
+	inline hashdag::EditMutex &GetBucketEditMutex(uint32_t bucket_id) { return m_edit_mutex; }
 	inline uint32_t GetBucketWords(uint32_t bucket_id) const {
 		auto it = bucket_words.find(bucket_id);
 		return it == bucket_words.end() ? 0 : it->second;
@@ -199,7 +197,8 @@ TEST_SUITE("NodePool") {
 
 		MurmurNodePool pool(6);
 		auto root = pool.EditLibFork(
-		    &busy_pool, {}, AABBEditor{.level = pool.GetConfig().GetLowestLevel(), .aabb_min = {}, .aabb_max{43, 21, 3}});
+		    &busy_pool, {},
+		    AABBEditor{.level = pool.GetConfig().GetLowestLevel(), .aabb_min = {}, .aabb_max{43, 21, 3}});
 		CHECK(root);
 	}
 }
