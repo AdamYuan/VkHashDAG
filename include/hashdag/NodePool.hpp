@@ -23,7 +23,7 @@
 namespace hashdag {
 
 template <typename T, typename Word>
-concept NodePool = requires(T e, const T ce) {
+concept NodePool = Hasher<typename T::WordSpanHasher, Word> && requires(T e, const T ce) {
 	{ ce.ReadPage(Word{} /* Page Index */) } -> std::convertible_to<const Word *>;
 	e.WritePage(Word{} /* Page Index */, Word{} /* Offset */, std::span<const Word>{} /* Content */);
 	e.ZeroPage(Word{} /* Page Index */, Word{} /* Offset */, Word{} /* Length */);
@@ -37,14 +37,14 @@ concept ThreadSafeEditNodePool = NodePool<T, Word> && requires(T e, const T ce) 
 	{ e.GetBucketEditMutex(Word{} /* Bucket Index */) } -> std::convertible_to<EditMutex &>;
 };
 
-template <typename Derived, std::unsigned_integral Word, Hasher<Word> WordSpanHasher> class NodePoolBase {
+template <typename Derived, std::unsigned_integral Word> class NodePoolBase {
 #ifndef HASHDAG_TEST
 private:
 #else
 public:
 #endif
 
-	template <typename, std::unsigned_integral Word_, Hasher<Word_>> friend class NodePoolLibFork;
+	template <typename, std::unsigned_integral> friend class NodePoolLibFork;
 
 	Config<Word> m_config;
 	std::vector<Word> m_bucket_level_bases;
@@ -158,8 +158,8 @@ public:
 	inline NodePointer<Word> upsert_node(auto &&get_node_words, Word level,
 	                                     std::span<const Word, NodeSpanExtent> node_span,
 	                                     NodePointer<Word> fallback_ptr) {
-		const Word bucket_index =
-		    m_bucket_level_bases[level] + (WordSpanHasher{}(node_span) & (m_config.GetBucketsAtLevel(level) - 1));
+		const Word bucket_index = m_bucket_level_bases[level] + (typename Derived::WordSpanHasher{}(node_span) &
+		                                                         (m_config.GetBucketsAtLevel(level) - 1));
 
 		if constexpr (ThreadSafe) {
 			auto &mutex = get_bucket_edit_mutex(bucket_index);

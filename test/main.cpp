@@ -48,15 +48,16 @@ struct SingleIterator {
 	}
 };
 
-struct ZeroNodePool final : public hashdag::NodePoolBase<ZeroNodePool, uint32_t, ZeroHasher> {
+struct ZeroNodePool final : public hashdag::NodePoolBase<ZeroNodePool, uint32_t> {
+	using WordSpanHasher = ZeroHasher;
+
 	std::vector<uint32_t> memory;
 	std::unordered_map<uint32_t, uint32_t> bucket_words;
 	std::unordered_set<uint32_t> pages;
 
 	inline ~ZeroNodePool() final = default;
 	inline explicit ZeroNodePool(uint32_t level_count)
-	    : hashdag::NodePoolBase<ZeroNodePool, uint32_t, ZeroHasher>(
-	          hashdag::Config<uint32_t>::MakeDefault(level_count)) {
+	    : hashdag::NodePoolBase<ZeroNodePool, uint32_t>(hashdag::Config<uint32_t>::MakeDefault(level_count)) {
 		memory.resize(GetConfig().GetTotalBuckets() * GetConfig().GetWordsPerBucket());
 	}
 
@@ -76,8 +77,10 @@ struct ZeroNodePool final : public hashdag::NodePoolBase<ZeroNodePool, uint32_t,
 		          memory.data() + ((page_id << GetConfig().word_bits_per_page) | page_offset));
 	}
 };
-struct MurmurNodePool final : public hashdag::NodePoolBase<MurmurNodePool, uint32_t, hashdag::MurmurHasher32>,
-                              public hashdag::NodePoolLibFork<MurmurNodePool, uint32_t, hashdag::MurmurHasher32> {
+struct MurmurNodePool final : public hashdag::NodePoolBase<MurmurNodePool, uint32_t>,
+                              public hashdag::NodePoolLibFork<MurmurNodePool, uint32_t> {
+	using WordSpanHasher = hashdag::MurmurHasher32;
+
 	std::vector<uint32_t> memory;
 	std::unordered_map<uint32_t, uint32_t> bucket_words;
 	std::unordered_set<uint32_t> pages;
@@ -86,8 +89,7 @@ struct MurmurNodePool final : public hashdag::NodePoolBase<MurmurNodePool, uint3
 
 	inline ~MurmurNodePool() final = default;
 	inline explicit MurmurNodePool(uint32_t level_count)
-	    : hashdag::NodePoolBase<MurmurNodePool, uint32_t, hashdag::MurmurHasher32>(
-	          hashdag::Config<uint32_t>::MakeDefault(level_count)) {
+	    : hashdag::NodePoolBase<MurmurNodePool, uint32_t>(hashdag::Config<uint32_t>::MakeDefault(level_count)) {
 		memory.resize(GetConfig().GetTotalWords());
 	}
 

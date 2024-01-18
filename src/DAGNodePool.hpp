@@ -15,15 +15,18 @@
 #include <myvk/Fence.hpp>
 #include <myvk/Semaphore.hpp>
 
-class DAGNodePool final : public hashdag::NodePoolBase<DAGNodePool, uint32_t, hashdag::MurmurHasher32>,
-                          public hashdag::NodePoolLibFork<DAGNodePool, uint32_t, hashdag::MurmurHasher32> {
+class DAGNodePool final : public hashdag::NodePoolBase<DAGNodePool, uint32_t>,
+                          public hashdag::NodePoolLibFork<DAGNodePool, uint32_t> {
+public:
+	using WordSpanHasher = hashdag::MurmurHasher32;
+
 private:
 	std::vector<uint32_t> m_bucket_words;
 	std::vector<std::unique_ptr<uint32_t[]>> m_pages;
 	std::array<hashdag::EditMutex, 1024> m_edit_mutexes{};
 
 	// Functions for hashdag::NodePoolBase
-	friend class hashdag::NodePoolBase<DAGNodePool, uint32_t, hashdag::MurmurHasher32>;
+	friend class hashdag::NodePoolBase<DAGNodePool, uint32_t>;
 
 	inline hashdag::EditMutex &GetBucketEditMutex(uint32_t bucket_id) {
 		return m_edit_mutexes[bucket_id % m_edit_mutexes.size()];
@@ -79,9 +82,8 @@ private:
 public:
 	inline DAGNodePool(const myvk::Ptr<myvk::Queue> &main_queue_ptr, const myvk::Ptr<myvk::Queue> &sparse_queue_ptr,
 	                   const hashdag::Config<uint32_t> &config)
-	    : hashdag::NodePoolBase<DAGNodePool, uint32_t, hashdag::MurmurHasher32>(config),
-	      m_device_ptr{main_queue_ptr->GetDevicePtr()}, m_main_queue_ptr{main_queue_ptr},
-	      m_sparse_queue_ptr{sparse_queue_ptr} {
+	    : hashdag::NodePoolBase<DAGNodePool, uint32_t>(config), m_device_ptr{main_queue_ptr->GetDevicePtr()},
+	      m_main_queue_ptr{main_queue_ptr}, m_sparse_queue_ptr{sparse_queue_ptr} {
 
 		m_bucket_words.resize(GetConfig().GetTotalBuckets());
 		m_pages.resize(GetConfig().GetTotalPages());

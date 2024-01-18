@@ -16,14 +16,12 @@
 
 namespace hashdag {
 
-template <typename Derived, std::unsigned_integral Word, Hasher<Word> WordSpanHasher> class NodePoolLibFork {
+template <typename Derived, std::unsigned_integral Word> class NodePoolLibFork {
 private:
 	inline const auto &get_node_pool() const {
-		return *static_cast<const NodePoolBase<Derived, Word, WordSpanHasher> *>(static_cast<const Derived *>(this));
+		return *static_cast<const NodePoolBase<Derived, Word> *>(static_cast<const Derived *>(this));
 	}
-	inline auto &get_node_pool() {
-		return *static_cast<NodePoolBase<Derived, Word, WordSpanHasher> *>(static_cast<Derived *>(this));
-	}
+	inline auto &get_node_pool() { return *static_cast<NodePoolBase<Derived, Word> *>(static_cast<Derived *>(this)); }
 
 	template <lf::context Context>
 	lf::basic_task<void, Context> lf_edit_inner_node(const Editor<Word> auto *p_editor, NodePointer<Word> *p_node_ptr,
@@ -88,7 +86,7 @@ private:
 	}
 
 public:
-	inline NodePoolLibFork() { static_assert(std::is_base_of_v<NodePoolBase<Derived, Word, WordSpanHasher>, Derived>); }
+	inline NodePoolLibFork() { static_assert(std::is_base_of_v<NodePoolBase<Derived, Word>, Derived>); }
 
 	inline NodePointer<Word> EditLibFork(lf::busy_pool *p_lf_pool, NodePointer<Word> root_ptr,
 	                                     const Editor<Word> auto &editor, Word max_task_level = -1) {
