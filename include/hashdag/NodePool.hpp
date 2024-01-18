@@ -330,9 +330,9 @@ public:
 	}
 
 	template <bool ThreadSafe>
-	inline NodePointer<Word> edit_inner_node(const Editor<Word> auto &editor, NodePointer<Word> node_ptr,
-	                                         const NodeCoord<Word> &coord) {
-		switch (editor.EditNode(coord)) {
+	inline NodePointer<Word> edit_node(const Editor<Word> auto &editor, NodePointer<Word> node_ptr,
+	                                   const NodeCoord<Word> &coord) {
+		switch (editor.EditNode(coord, node_ptr)) {
 		case EditType::kNotAffected:
 			return node_ptr;
 		case EditType::kClear:
@@ -353,7 +353,7 @@ public:
 
 		for (Word i = 0; i < 8; ++i) {
 			NodePointer<Word> child_ptr{children[i]};
-			NodePointer<Word> new_child_ptr = edit_inner_node<ThreadSafe>(editor, child_ptr, coord.GetChildCoord(i));
+			NodePointer<Word> new_child_ptr = edit_node<ThreadSafe>(editor, child_ptr, coord.GetChildCoord(i));
 
 			changed |= new_child_ptr != child_ptr;
 			children[i] = *new_child_ptr;
@@ -375,13 +375,12 @@ public:
 		for (Word i = 0; i < 64; ++i) {
 			constexpr Word kWordBits = std::countr_zero(sizeof(Word) * 8), kWordMask = (1u << kWordBits) - 1u;
 			bool voxel = (p_leaf[i >> kWordBits] >> (i & kWordMask)) & 1u;
-			if (voxel)
-				p_iterator->Iterate(coord.GetLeafCoord(i));
+			p_iterator->IterateVoxel(coord.GetLeafCoord(i), voxel);
 		}
 	}
-	inline void iterate_inner_node(Iterator<Word> auto *p_iterator, NodePointer<Word> node_ptr,
-	                               const NodeCoord<Word> &coord) const {
-		if (!node_ptr || !p_iterator->IsAffected(coord))
+	inline void iterate_node(Iterator<Word> auto *p_iterator, NodePointer<Word> node_ptr,
+	                         const NodeCoord<Word> &coord) const {
+		if (p_iterator->IterateNode(coord, node_ptr) == IterateType::kStop)
 			return;
 
 		if (coord.level == m_config.GetNodeLevels() - 1) {
@@ -389,13 +388,19 @@ public:
 			return;
 		}
 
-		const Word *p_node = read_node(*node_ptr);
-		Word child_mask = *p_node;
-		const Word *p_next_child = p_node + 1;
+		Word child_mask = 0;
+		const Word *p_next_child = nullptr;
+		if (node_ptr) {
+			const Word *p_node = read_node(*node_ptr);
+			child_mask = *p_node;
+			p_next_child = p_node + 1;
+		}
 
-		foreach_child_index(child_mask, [&](Word child_idx) {
-			iterate_inner_node(p_iterator, *(p_next_child++), coord.GetChildCoord(child_idx));
-		});
+		for (Word i = 0; i < 8; ++i) {
+			NodePointer<Word> child_ptr =
+			    ((child_mask >> i) & 1u) ? NodePointer<Word>{*(p_next_child++)} : NodePointer<Word>::Null();
+			iterate_node(p_iterator, child_ptr, coord.GetChildCoord(i));
+		}
 	}
 
 public:
@@ -407,10 +412,10 @@ public:
 	inline const auto &GetConfig() const { return m_config; }
 	inline NodePointer<Word> Edit(NodePointer<Word> root_ptr, const Editor<Word> auto &editor) {
 		make_filled_node_pointers();
-		return edit_inner_node<false>(editor, root_ptr, {});
+		return edit_node<false>(editor, root_ptr, {});
 	}
 	inline void Iterate(NodePointer<Word> root_ptr, Iterator<Word> auto *p_iterator) const {
-		iterate_inner_node(p_iterator, root_ptr, {});
+		iterate_node(p_iterator, root_ptr, {});
 	}
 };
 

@@ -10,6 +10,7 @@
 #include "DAGRenderer.hpp"
 #include "GPSQueueSelector.hpp"
 
+#include <atomic>
 #include <libfork/schedule/busy_pool.hpp>
 
 constexpr uint32_t kFrameCount = 3;
@@ -27,7 +28,7 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
 struct AABBEditor {
 	uint32_t level;
 	hashdag::Vec3<uint32_t> aabb_min, aabb_max;
-	inline hashdag::EditType EditNode(const hashdag::NodeCoord<uint32_t> &coord) const {
+	inline hashdag::EditType EditNode(const hashdag::NodeCoord<uint32_t> &coord, hashdag::NodePointer<uint32_t>) const {
 		auto lb = coord.GetLowerBoundAtLevel(level), ub = coord.GetUpperBoundAtLevel(level);
 		/* printf("(%d %d %d), (%d, %d, %d) -> %d\n", lb.x, lb.y, lb.z, ub.x, ub.y, ub.z,
 		       !ub.Any(std::less_equal<uint32_t>{}, aabb_min) && !lb.Any(std::greater_equal<uint32_t>{}, aabb_max)); */
@@ -35,7 +36,7 @@ struct AABBEditor {
 			return hashdag::EditType::kNotAffected;
 		if (lb.All(std::greater_equal<uint32_t>{}, aabb_min) && ub.All(std::less_equal<uint32_t>{}, aabb_max))
 			return hashdag::EditType::kFill;
-		return hashdag::EditType::kAffected;
+		return hashdag::EditType::kProceed;
 	}
 	inline bool EditVoxel(const hashdag::NodeCoord<uint32_t> &coord, bool voxel) const {
 		/*if (coord.pos.All(std::greater_equal<uint32_t>{}, aabb_min) && coord.pos.All(std::less<uint32_t>{}, aabb_max))
@@ -45,6 +46,26 @@ struct AABBEditor {
 		                    coord.pos.All(std::less<uint32_t>{}, aabb_max);
 	}
 };
+
+/* struct AABBIterator {
+    uint32_t level;
+    hashdag::Vec3<uint32_t> aabb_min, aabb_max;
+
+    std::atomic_uint64_t count = 0;
+
+    inline hashdag::IterateType IterateNode(const hashdag::NodeCoord<uint32_t> &coord,
+                                            hashdag::NodePointer<uint32_t> node) const {
+        auto lb = coord.GetLowerBoundAtLevel(level), ub = coord.GetUpperBoundAtLevel(level);
+        if (!node || ub.Any(std::less_equal<uint32_t>{}, aabb_min) || lb.Any(std::greater_equal<uint32_t>{}, aabb_max))
+            return hashdag::IterateType::kStop;
+        return hashdag::IterateType::kProceed;
+    }
+    inline void IterateVoxel(const hashdag::NodeCoord<uint32_t> &coord, bool voxel) {
+        if (voxel && coord.pos.All(std::greater_equal<uint32_t>{}, aabb_min) &&
+            coord.pos.All(std::less<uint32_t>{}, aabb_max))
+            count.fetch_add(1, std::memory_order_relaxed);
+    }
+}; */
 
 template <typename Func> inline long ns(Func &&func) {
 	auto begin = std::chrono::high_resolution_clock::now();

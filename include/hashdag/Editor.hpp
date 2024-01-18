@@ -7,15 +7,16 @@
 #define VKHASHDAG_EDITOR_HPP
 
 #include "NodeCoord.hpp"
+#include "NodePointer.hpp"
 #include <concepts>
 
 namespace hashdag {
 
-enum class EditType { kNotAffected, kAffected, kFill, kClear };
+enum class EditType { kNotAffected, kProceed, kFill, kClear };
 
 template <typename T, typename Word>
 concept Editor = requires(const T ce) {
-	{ ce.EditNode(NodeCoord<Word>{}) } -> std::convertible_to<EditType>;
+	{ ce.EditNode(NodeCoord<Word>{}, NodePointer<Word>{}) } -> std::convertible_to<EditType>;
 	{ ce.EditVoxel(NodeCoord<Word>{}, bool{}) } -> std::convertible_to<bool>;
 };
 

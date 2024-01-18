@@ -7,18 +7,16 @@
 #define VKHASHDAG_ITERATOR_HPP
 
 #include "NodeCoord.hpp"
+#include "NodePointer.hpp"
 
 namespace hashdag {
 
-template <typename T, typename Word>
-concept Iterator = requires(T e, const T ce) {
-	{ ce.IsAffected(NodeCoord<Word>{}) } -> std::convertible_to<bool>;
-	e.Iterate(NodeCoord<Word>{});
-};
+enum class IterateType { kStop, kProceed };
 
 template <typename T, typename Word>
-concept ThreadedIterator = Editor<T, Word> && requires(const T ce) {
-	{ ce.GetAffectedExtent(NodeCoord<Word>{}) } -> std::convertible_to<uint64_t>;
+concept Iterator = requires(T i) {
+	{ i.IterateNode(NodeCoord<Word>{}, NodePointer<Word>{}) } -> std::convertible_to<IterateType>;
+	i.IterateVoxel(NodeCoord<Word>{}, bool{});
 };
 
 } // namespace hashdag

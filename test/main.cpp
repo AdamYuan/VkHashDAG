@@ -14,7 +14,7 @@ struct ZeroHasher {
 struct AABBEditor {
 	uint32_t level;
 	hashdag::Vec3<uint32_t> aabb_min, aabb_max;
-	inline hashdag::EditType EditNode(const hashdag::NodeCoord<uint32_t> &coord) const {
+	inline hashdag::EditType EditNode(const hashdag::NodeCoord<uint32_t> &coord, hashdag::NodePointer<uint32_t>) const {
 		auto lb = coord.GetLowerBoundAtLevel(level), ub = coord.GetUpperBoundAtLevel(level);
 		/* printf("(%d %d %d), (%d, %d, %d) -> %d\n", lb.x, lb.y, lb.z, ub.x, ub.y, ub.z,
 		       !ub.Any(std::less_equal<uint32_t>{}, aabb_min) && !lb.Any(std::greater_equal<uint32_t>{}, aabb_max)); */
@@ -22,7 +22,7 @@ struct AABBEditor {
 			return hashdag::EditType::kNotAffected;
 		if (lb.All(std::greater_equal<uint32_t>{}, aabb_min) && ub.All(std::less_equal<uint32_t>{}, aabb_max))
 			return hashdag::EditType::kFill;
-		return hashdag::EditType::kAffected;
+		return hashdag::EditType::kProceed;
 	}
 	inline bool EditVoxel(const hashdag::NodeCoord<uint32_t> &coord, bool voxel) const {
 		/*if (coord.pos.All(std::greater_equal<uint32_t>{}, aabb_min) && coord.pos.All(std::less<uint32_t>{}, aabb_max))
@@ -37,13 +37,16 @@ struct SingleIterator {
 	uint32_t level;
 	hashdag::Vec3<uint32_t> pos;
 	bool exist;
-	inline bool IsAffected(const hashdag::NodeCoord<uint32_t> &coord) const {
+	inline hashdag::IterateType IterateNode(const hashdag::NodeCoord<uint32_t> &coord,
+	                                        hashdag::NodePointer<uint32_t> node) const {
 		auto lb = coord.GetLowerBoundAtLevel(level), ub = coord.GetUpperBoundAtLevel(level);
-		return !ub.Any(std::less_equal<uint32_t>{}, pos) && !lb.Any(std::greater<uint32_t>{}, pos);
+		if (node && !ub.Any(std::less_equal<uint32_t>{}, pos) && !lb.Any(std::greater<uint32_t>{}, pos))
+			return hashdag::IterateType::kProceed;
+		return hashdag::IterateType::kStop;
 	}
-	inline void Iterate(const hashdag::NodeCoord<uint32_t> &coord) {
+	inline void IterateVoxel(const hashdag::NodeCoord<uint32_t> &coord, bool voxel) {
 		CHECK_EQ(coord.level, level);
-		if (coord.pos == pos)
+		if (voxel && coord.pos == pos)
 			exist = true;
 	}
 };
