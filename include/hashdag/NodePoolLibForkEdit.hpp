@@ -5,10 +5,9 @@
 // Threaded NodePool Edit and Iterate with libfork
 
 #pragma once
-#ifndef VKHASHDAG_NODEPOOLLIBFORK_HPP
-#define VKHASHDAG_NODEPOOLLIBFORK_HPP
+#ifndef VKHASHDAG_NODEPOOLLIBFORKEDIT_HPP
+#define VKHASHDAG_NODEPOOLLIBFORKEDIT_HPP
 
-#include "Hasher.hpp"
 #include "NodePool.hpp"
 
 #include <libfork/schedule/busy_pool.hpp>
@@ -16,7 +15,7 @@
 
 namespace hashdag {
 
-template <typename Derived, std::unsigned_integral Word> class NodePoolLibFork {
+template <typename Derived, std::unsigned_integral Word> class NodePoolLibForkEdit {
 private:
 	inline const auto &get_node_pool() const {
 		return *static_cast<const NodePoolBase<Derived, Word> *>(static_cast<const Derived *>(this));
@@ -89,50 +88,50 @@ private:
 	/* template <lf::context Context>
 	inline lf::basic_task<void, Context> lf_iterate_node(Iterator<Word> auto *p_iterator, NodePointer<Word> node_ptr,
 	                                                     NodeCoord<Word> coord, Word max_task_level) const {
-		if (coord.level == get_node_pool().m_config.GetNodeLevels() - 1) {
-			get_node_pool().iterate_leaf(p_iterator, node_ptr, coord);
-			co_return;
-		}
-		if (coord.level >= max_task_level) {
-			get_node_pool().iterate_node(p_iterator, node_ptr, coord);
-			co_return;
-		}
+	    if (coord.level == get_node_pool().m_config.GetNodeLevels() - 1) {
+	        get_node_pool().iterate_leaf(p_iterator, node_ptr, coord);
+	        co_return;
+	    }
+	    if (coord.level >= max_task_level) {
+	        get_node_pool().iterate_node(p_iterator, node_ptr, coord);
+	        co_return;
+	    }
 
-		Word child_mask = 0;
-		const Word *p_next_child = nullptr;
+	    Word child_mask = 0;
+	    const Word *p_next_child = nullptr;
 
-		if (node_ptr) {
-			const Word *p_node = get_node_pool().read_node(*node_ptr);
-			child_mask = *p_node;
-			p_next_child = p_node + 1;
-		}
+	    if (node_ptr) {
+	        const Word *p_node = get_node_pool().read_node(*node_ptr);
+	        child_mask = *p_node;
+	        p_next_child = p_node + 1;
+	    }
 
 #define CHILD(I, POST) \
 	do { \
-		NodeCoord<Word> child_coord = coord.GetChildCoord(I); \
-		NodePointer<Word> child_ptr = \
-		    ((child_mask >> I) & 1u) ? NodePointer<Word>{*(p_next_child++)} : NodePointer<Word>::Null(); \
-		if (p_iterator->IterateNode(child_coord, child_ptr) != IterateType::kStop) \
-			co_await lf_iterate_node<Context>(p_iterator, child_ptr, child_coord, max_task_level) POST; \
+	    NodeCoord<Word> child_coord = coord.GetChildCoord(I); \
+	    NodePointer<Word> child_ptr = \
+	        ((child_mask >> I) & 1u) ? NodePointer<Word>{*(p_next_child++)} : NodePointer<Word>::Null(); \
+	    if (p_iterator->IterateNode(child_coord, child_ptr) != IterateType::kStop) \
+	        co_await lf_iterate_node<Context>(p_iterator, child_ptr, child_coord, max_task_level) POST; \
 	} while (0)
 
-		CHILD(0, .fork());
-		CHILD(1, .fork());
-		CHILD(2, .fork());
-		CHILD(3, .fork());
-		CHILD(4, .fork());
-		CHILD(5, .fork());
-		CHILD(6, .fork());
-		CHILD(7, );
+	    CHILD(0, .fork());
+	    CHILD(1, .fork());
+	    CHILD(2, .fork());
+	    CHILD(3, .fork());
+	    CHILD(4, .fork());
+	    CHILD(5, .fork());
+	    CHILD(6, .fork());
+	    CHILD(7, );
 
 #undef CHILD
-		co_await lf::join();
+	    co_await lf::join();
 	} */
 
 public:
-	inline NodePoolLibFork() { static_assert(std::is_base_of_v<NodePoolBase<Derived, Word>, Derived>); }
+	inline NodePoolLibForkEdit() { static_assert(std::is_base_of_v<NodePoolBase<Derived, Word>, Derived>); }
 
-	inline NodePointer<Word> EditLibFork(lf::busy_pool *p_lf_pool, NodePointer<Word> root_ptr,
+	inline NodePointer<Word> LibForkEdit(lf::busy_pool *p_lf_pool, NodePointer<Word> root_ptr,
 	                                     const Editor<Word> auto &editor, Word max_task_level = -1) {
 		get_node_pool().make_filled_node_pointers();
 
@@ -151,15 +150,15 @@ public:
 
 	/* inline void IterateLibFork(lf::busy_pool *p_lf_pool, NodePointer<Word> root_ptr, Iterator<Word> auto *p_iterator,
 	                           Word max_task_level = -1) {
-		get_node_pool().make_filled_node_pointers();
+	    get_node_pool().make_filled_node_pointers();
 
-		if (p_iterator->IterateNode({}, root_ptr) == IterateType::kStop)
-			return;
-		p_lf_pool->schedule(
-		    lf_iterate_node<lf::busy_pool::context>(p_iterator, root_ptr, NodeCoord<Word>{}, max_task_level));
+	    if (p_iterator->IterateNode({}, root_ptr) == IterateType::kStop)
+	        return;
+	    p_lf_pool->schedule(
+	        lf_iterate_node<lf::busy_pool::context>(p_iterator, root_ptr, NodeCoord<Word>{}, max_task_level));
 	} */
 };
 
 } // namespace hashdag
 
-#endif // VKHASHDAG_NODEPOOLLIBFORK_HPP
+#endif // VKHASHDAG_NODEPOOLLIBFORKEDIT_HPP

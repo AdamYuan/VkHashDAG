@@ -2,7 +2,7 @@
 #include "doctest.h"
 
 #include <hashdag/NodePool.hpp>
-#include <hashdag/NodePoolLibFork.hpp>
+#include <hashdag/NodePoolLibForkEdit.hpp>
 
 #include <unordered_map>
 #include <unordered_set>
@@ -81,7 +81,7 @@ struct ZeroNodePool final : public hashdag::NodePoolBase<ZeroNodePool, uint32_t>
 	}
 };
 struct MurmurNodePool final : public hashdag::NodePoolBase<MurmurNodePool, uint32_t>,
-                              public hashdag::NodePoolLibFork<MurmurNodePool, uint32_t> {
+                              public hashdag::NodePoolLibForkEdit<MurmurNodePool, uint32_t> {
 	using WordSpanHasher = hashdag::MurmurHasher32;
 
 	std::vector<uint32_t> memory;
@@ -197,11 +197,11 @@ TEST_SUITE("NodePool") {
 		pool.Iterate(root4, &iter);
 		CHECK(iter.exist);
 	}
-	TEST_CASE("Test EditLibFork()") {
+	TEST_CASE("Test LibForkEdit()") {
 		lf::busy_pool busy_pool(12);
 
 		MurmurNodePool pool(6);
-		auto root = pool.EditLibFork(
+		auto root = pool.LibForkEdit(
 		    &busy_pool, {},
 		    AABBEditor{.level = pool.GetConfig().GetLowestLevel(), .aabb_min = {}, .aabb_max{43, 21, 3}});
 		CHECK(root);

@@ -10,8 +10,9 @@
 #include "DAGRenderer.hpp"
 #include "GPSQueueSelector.hpp"
 
-#include <atomic>
 #include <libfork/schedule/busy_pool.hpp>
+
+#include <thread>
 
 constexpr uint32_t kFrameCount = 3;
 
@@ -113,14 +114,14 @@ int main() {
 	// auto dag_node_pool = myvk::MakePtr<DAGNodePool>(generic_queue, sparse_queue,
 	//                                                 hashdag::Config<uint32_t>::MakeDefault(17, 9, 14, 0, 7, 13));
 	auto edit_ns = ns([&]() {
-		dag_node_pool->SetRoot(dag_node_pool->EditLibFork(&busy_pool, dag_node_pool->GetRoot(),
+		dag_node_pool->SetRoot(dag_node_pool->LibForkEdit(&busy_pool, dag_node_pool->GetRoot(),
 		                                                  AABBEditor{
 		                                                      .level = dag_node_pool->GetConfig().GetLowestLevel(),
 		                                                      .aabb_min = {0, 0, 0},
 		                                                      .aabb_max = {5000, 5000, 5000},
 		                                                  },
 		                                                  10));
-		dag_node_pool->SetRoot(dag_node_pool->EditLibFork(&busy_pool, dag_node_pool->GetRoot(),
+		dag_node_pool->SetRoot(dag_node_pool->LibForkEdit(&busy_pool, dag_node_pool->GetRoot(),
 		                                                  AABBEditor{
 		                                                      .level = dag_node_pool->GetConfig().GetLowestLevel(),
 		                                                      .aabb_min = {1001, 1000, 1000},

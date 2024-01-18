@@ -44,7 +44,8 @@ private:
 public:
 #endif
 
-	template <typename, std::unsigned_integral> friend class NodePoolLibFork;
+	template <typename, std::unsigned_integral> friend class NodePoolLibForkEdit;
+	template <typename, std::unsigned_integral> friend class NodePoolGLMTraversal;
 
 	Config<Word> m_config;
 	std::vector<Word> m_bucket_level_bases;
