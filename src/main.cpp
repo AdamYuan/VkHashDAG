@@ -10,9 +10,8 @@
 #include "DAGRenderer.hpp"
 #include "GPSQueueSelector.hpp"
 
+#include <BS_thread_pool.hpp>
 #include <libfork/schedule/busy_pool.hpp>
-
-#include <thread>
 
 constexpr uint32_t kFrameCount = 3;
 
@@ -48,6 +47,48 @@ struct AABBEditor {
 	}
 };
 
+template <bool Fill = true> struct SphereEditor {
+	glm::vec3 center;
+	float r2;
+	inline hashdag::EditType EditNode(const hashdag::NodeCoord<uint32_t> &coord, hashdag::NodePointer<uint32_t>) const {
+		auto lb = coord.GetLowerBound<float>(), ub = coord.GetUpperBound<float>();
+		glm::vec3 lb_dist = glm::vec3{lb.x, lb.y, lb.z} - center;
+		glm::vec3 ub_dist = glm::vec3{ub.x, ub.y, ub.z} - center;
+		glm::vec3 lb_dist_2 = lb_dist * lb_dist;
+		glm::vec3 ub_dist_2 = ub_dist * ub_dist;
+
+		glm::vec3 max_dist_2 = glm::max(lb_dist_2, ub_dist_2);
+		float max_n2 = max_dist_2.x + max_dist_2.y + max_dist_2.z;
+		if (max_n2 <= r2)
+			return Fill ? hashdag::EditType::kFill : hashdag::EditType::kClear;
+
+		float min_n2 = 0.0f;
+		if (lb_dist.x > 0)
+			min_n2 += lb_dist_2.x;
+		if (ub_dist.x < 0)
+			min_n2 += ub_dist_2.x;
+		if (lb_dist.y > 0)
+			min_n2 += lb_dist_2.y;
+		if (ub_dist.y < 0)
+			min_n2 += ub_dist_2.y;
+		if (lb_dist.z > 0)
+			min_n2 += lb_dist_2.z;
+		if (ub_dist.z < 0)
+			min_n2 += ub_dist_2.z;
+
+		return min_n2 > r2 ? hashdag::EditType::kNotAffected : hashdag::EditType::kProceed;
+	}
+	inline bool EditVoxel(const hashdag::NodeCoord<uint32_t> &coord, bool voxel) const {
+		auto p = coord.GetCenter<float>();
+		glm::vec3 p_dist = glm::vec3{p.x, p.y, p.z} - center;
+		float p_n2 = glm::dot(p_dist, p_dist);
+		if constexpr (Fill)
+			return voxel || p_n2 <= r2;
+		else
+			return voxel && p_n2 > r2;
+	}
+};
+
 /* struct AABBIterator {
     uint32_t level;
     hashdag::Vec3<uint32_t> aabb_min, aabb_max;
@@ -75,7 +116,10 @@ template <typename Func> inline long ns(Func &&func) {
 	return std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count();
 }
 
-lf::busy_pool busy_pool(12);
+lf::busy_pool busy_pool(8);
+
+BS::thread_pool edit_pool(1);
+std::future<hashdag::NodePointer<uint32_t>> edit_future;
 
 int main() {
 	GLFWwindow *window = myvk::GLFWCreateWindow("Test", 640, 480, true);
@@ -132,10 +176,27 @@ int main() {
 	printf("edit cost %lf ms\n", (double)edit_ns / 1000000.0);
 	auto flush_ns = ns([&]() {
 		auto fence = myvk::Fence::Create(device);
-		dag_node_pool->Flush({}, {}, fence);
-		fence->Wait();
+		if (dag_node_pool->FlushMissingPages({}, {}, fence))
+			fence->Wait();
 	});
 	printf("flush cost %lf ms\n", (double)flush_ns / 1000000.0);
+
+	const auto pop_edit_result = [dag_node_pool]() {
+		if (edit_future.valid() && edit_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+			dag_node_pool->SetRoot(edit_future.get());
+	};
+	const auto push_edit = [dag_node_pool, device](const hashdag::Editor<uint32_t> auto &editor) {
+		if (edit_future.valid())
+			return;
+		edit_future = edit_pool.submit_task([dag_node_pool, device, editor]() {
+			hashdag::NodePointer<uint32_t> new_root_ptr;
+			new_root_ptr = dag_node_pool->LibForkEdit(&busy_pool, dag_node_pool->GetRoot(), editor, 10);
+			auto fence = myvk::Fence::Create(device);
+			if (dag_node_pool->FlushMissingPages({}, {}, fence))
+				fence->Wait();
+			return new_root_ptr;
+		});
+	};
 
 	auto camera = myvk::MakePtr<Camera>();
 	camera->m_speed = 0.01f;
@@ -153,24 +214,42 @@ int main() {
 	double prev_time = glfwGetTime();
 
 	while (!glfwWindowShouldClose(window)) {
-		glfwPollEvents();
-
 		double time = glfwGetTime(), delta = time - prev_time;
 		prev_time = time;
 
+		glfwPollEvents();
+
 		if (cursor_captured)
 			camera->MoveControl(window, float(delta));
+
+		pop_edit_result();
+
+		std::optional<glm::vec3> p =
+		    dag_node_pool->GLMTraversal<float>(dag_node_pool->GetRoot(), camera->m_position, camera->GetLook());
+		if (p) {
+			glm::u32vec3 up = *p * glm::vec3(dag_node_pool->GetConfig().GetResolution());
+
+			if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
+				float r = 128.0f / float(dag_node_pool->GetConfig().GetResolution());
+				push_edit(SphereEditor<false>{
+				    .center = *p,
+				    .r2 = r * r,
+				});
+			} else if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
+				float r = 128.0f / float(dag_node_pool->GetConfig().GetResolution());
+				push_edit(SphereEditor{
+				    .center = *p,
+				    .r2 = r * r,
+				});
+			}
+			// printf("%f %f %f\n", p->x, p->y, p->z);
+		}
 
 		myvk::ImGuiNewFrame();
 		ImGui::Begin("Test");
 		ImGui::Text("%f", ImGui::GetIO().Framerate);
 		ImGui::End();
 		ImGui::Render();
-
-		std::optional<glm::vec3> p =
-		    dag_node_pool->GLMTraversal<float>(dag_node_pool->GetRoot(), camera->m_position, camera->GetLook());
-		if (p)
-			printf("%f %f %f\n", p->x, p->y, p->z);
 
 		if (frame_manager->NewFrame()) {
 			uint32_t image_index = frame_manager->GetCurrentImageIndex();

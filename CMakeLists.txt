@@ -32,6 +32,7 @@ add_subdirectory(dep/MyVK)
 add_subdirectory(dep/glm)
 add_subdirectory(dep/libfork)
 add_subdirectory(dep/libcuckoo)
+add_subdirectory(dep/thread-pool)
 
 add_subdirectory(shader)
 
@@ -48,7 +49,7 @@ target_link_libraries(VkHashDAG PRIVATE
         libcuckoo::libcuckoo
         libfork::libfork
         glm::glm
-
+        BS::thread_pool
         shader
 )
 

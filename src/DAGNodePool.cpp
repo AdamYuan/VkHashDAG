@@ -77,70 +77,71 @@ void DAGNodePool::create_descriptor() {
 	vkUpdateDescriptorSets(m_device_ptr->GetHandle(), 1, &write, 0, nullptr);
 }
 
-void DAGNodePool::Flush(const myvk::SemaphoreGroup &wait_semaphores, const myvk::SemaphoreGroup &signal_semaphores,
-                        const myvk::Ptr<myvk::Fence> &fence) {
-	auto gpu_write_ranges = m_gpu_write_ranges.lock_table();
+bool DAGNodePool::FlushMissingPages(const myvk::SemaphoreGroup &wait_semaphores,
+                                    const myvk::SemaphoreGroup &signal_semaphores,
+                                    const myvk::Ptr<myvk::Fence> &fence) {
+	auto gpu_missing_write_ranges = m_gpu_missing_write_ranges.lock_table();
+	if (gpu_missing_write_ranges.empty())
+		return false;
 
 	std::unordered_set<uint32_t> missing_gpu_page_indices;
-	for (const auto &it : gpu_write_ranges) {
+	for (const auto &it : gpu_missing_write_ranges) {
 		uint32_t page_id = it.first, gpu_page_id = page_id >> m_page_bits_per_gpu_page;
 		if (m_gpu_pages[gpu_page_id].allocation == VK_NULL_HANDLE)
 			missing_gpu_page_indices.insert(gpu_page_id);
 	}
 
-	if (!missing_gpu_page_indices.empty()) {
-		std::vector<VmaAllocation> allocations(missing_gpu_page_indices.size());
-		std::vector<VmaAllocationInfo> allocation_infos(missing_gpu_page_indices.size());
+	std::vector<VmaAllocation> allocations(missing_gpu_page_indices.size());
+	std::vector<VmaAllocationInfo> allocation_infos(missing_gpu_page_indices.size());
 
-		VmaAllocationCreateInfo create_info = {};
-		create_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-		create_info.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+	VmaAllocationCreateInfo create_info = {};
+	create_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+	create_info.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
-		vmaAllocateMemoryPages(m_device_ptr->GetAllocatorHandle(), &m_gpu_page_memory_requirements, &create_info,
-		                       missing_gpu_page_indices.size(), allocations.data(), allocation_infos.data());
+	vmaAllocateMemoryPages(m_device_ptr->GetAllocatorHandle(), &m_gpu_page_memory_requirements, &create_info,
+	                       missing_gpu_page_indices.size(), allocations.data(), allocation_infos.data());
 
-		VkBindSparseInfo bind_sparse_info = {VK_STRUCTURE_TYPE_BIND_SPARSE_INFO};
-		bind_sparse_info.waitSemaphoreCount = wait_semaphores.GetCount();
-		bind_sparse_info.pWaitSemaphores = wait_semaphores.GetSemaphoresPtr();
-		bind_sparse_info.signalSemaphoreCount = signal_semaphores.GetCount();
-		bind_sparse_info.pSignalSemaphores = signal_semaphores.GetSemaphoresPtr();
+	VkBindSparseInfo bind_sparse_info = {VK_STRUCTURE_TYPE_BIND_SPARSE_INFO};
+	bind_sparse_info.waitSemaphoreCount = wait_semaphores.GetCount();
+	bind_sparse_info.pWaitSemaphores = wait_semaphores.GetSemaphoresPtr();
+	bind_sparse_info.signalSemaphoreCount = signal_semaphores.GetCount();
+	bind_sparse_info.pSignalSemaphores = signal_semaphores.GetSemaphoresPtr();
 
-		std::vector<VkSparseMemoryBind> sparse_memory_binds(missing_gpu_page_indices.size());
-		VkSparseBufferMemoryBindInfo sparse_buffer_memory_bind_info = {
-		    .buffer = m_gpu_buffer,
-		    .bindCount = (uint32_t)sparse_memory_binds.size(),
-		    .pBinds = sparse_memory_binds.data(),
+	std::vector<VkSparseMemoryBind> sparse_memory_binds(missing_gpu_page_indices.size());
+	VkSparseBufferMemoryBindInfo sparse_buffer_memory_bind_info = {
+	    .buffer = m_gpu_buffer,
+	    .bindCount = (uint32_t)sparse_memory_binds.size(),
+	    .pBinds = sparse_memory_binds.data(),
+	};
+
+	bind_sparse_info.bufferBindCount = 1;
+	bind_sparse_info.pBufferBinds = &sparse_buffer_memory_bind_info;
+
+	uint32_t counter = 0;
+	for (uint32_t gpu_page_id : missing_gpu_page_indices) {
+		const auto &allocation_info = allocation_infos[counter];
+
+		m_gpu_pages[gpu_page_id] = {
+		    .allocation = allocations[counter],
+		    .p_mapped_data = (uint32_t *)allocation_info.pMappedData,
 		};
 
-		bind_sparse_info.bufferBindCount = 1;
-		bind_sparse_info.pBufferBinds = &sparse_buffer_memory_bind_info;
+		VkDeviceSize resource_offset = gpu_page_id * m_gpu_page_memory_requirements.size;
+		sparse_memory_binds[counter] = {
+		    .resourceOffset = resource_offset,
+		    .size = std::min(allocation_info.size, m_gpu_buffer_size - resource_offset),
+		    .memory = allocation_info.deviceMemory,
+		    .memoryOffset = allocation_info.offset,
+		    .flags = 0,
+		};
 
-		uint32_t counter = 0;
-		for (uint32_t gpu_page_id : missing_gpu_page_indices) {
-			const auto &allocation_info = allocation_infos[counter];
-
-			m_gpu_pages[gpu_page_id] = {
-			    .allocation = allocations[counter],
-			    .p_mapped_data = (uint32_t *)allocation_info.pMappedData,
-			};
-
-			VkDeviceSize resource_offset = gpu_page_id * m_gpu_page_memory_requirements.size;
-			sparse_memory_binds[counter] = {
-			    .resourceOffset = resource_offset,
-			    .size = std::min(allocation_info.size, m_gpu_buffer_size - resource_offset),
-			    .memory = allocation_info.deviceMemory,
-			    .memoryOffset = allocation_info.offset,
-			    .flags = 0,
-			};
-
-			++counter;
-		}
-
-		vkQueueBindSparse(m_sparse_queue_ptr->GetHandle(), 1, &bind_sparse_info,
-		                  fence ? fence->GetHandle() : VK_NULL_HANDLE);
+		++counter;
 	}
 
-	for (const auto &it : gpu_write_ranges) {
+	vkQueueBindSparse(m_sparse_queue_ptr->GetHandle(), 1, &bind_sparse_info,
+	                  fence ? fence->GetHandle() : VK_NULL_HANDLE);
+
+	for (const auto &it : gpu_missing_write_ranges) {
 		uint32_t page_id = it.first, gpu_page_id = page_id >> m_page_bits_per_gpu_page;
 		const Range &range = it.second;
 
@@ -150,5 +151,7 @@ void DAGNodePool::Flush(const myvk::SemaphoreGroup &wait_semaphores, const myvk:
 		std::copy(m_pages[page_id].get() + range.begin, m_pages[page_id].get() + range.end,
 		          gpu_page.p_mapped_data + gpu_page_offset);
 	}
-	gpu_write_ranges.clear();
+	gpu_missing_write_ranges.clear();
+
+	return true;
 }

@@ -44,8 +44,15 @@ private:
 			m_pages[page_id] = std::make_unique_for_overwrite<uint32_t[]>(GetConfig().GetWordsPerPage());
 		std::copy(word_span.begin(), word_span.end(), m_pages[page_id].get() + page_offset);
 
-		Range range = {page_offset, page_offset + (uint32_t)word_span.size()};
-		m_gpu_write_ranges.upsert(page_id, [range](Range &r, libcuckoo::UpsertContext) { r.Union(range); });
+		uint32_t gpu_page_id = page_id >> m_page_bits_per_gpu_page;
+		if (m_gpu_pages[gpu_page_id].p_mapped_data) {
+			uint32_t gpu_page_offset =
+			    ((page_id & ((1u << m_page_bits_per_gpu_page) - 1)) << GetConfig().word_bits_per_page) | page_offset;
+			std::copy(word_span.begin(), word_span.end(), m_gpu_pages[gpu_page_id].p_mapped_data + gpu_page_offset);
+		} else {
+			Range range = {page_offset, page_offset + (uint32_t)word_span.size()};
+			m_gpu_missing_write_ranges.upsert(page_id, [range](Range &r, libcuckoo::UpsertContext) { r.Union(range); });
+		}
 	}
 
 	// Root
@@ -70,7 +77,7 @@ private:
 			end = std::max(end, r.end);
 		}
 	};
-	libcuckoo::cuckoohash_map<uint32_t, Range> m_gpu_write_ranges;
+	libcuckoo::cuckoohash_map<uint32_t, Range> m_gpu_missing_write_ranges;
 
 	uint32_t m_page_bits_per_gpu_page;
 
@@ -96,8 +103,8 @@ public:
 	}
 	inline ~DAGNodePool() final { destroy_buffer(); }
 
-	void Flush(const myvk::SemaphoreGroup &wait_semaphores, const myvk::SemaphoreGroup &signal_semaphores,
-	           const myvk::Ptr<myvk::Fence> &fence);
+	bool FlushMissingPages(const myvk::SemaphoreGroup &wait_semaphores, const myvk::SemaphoreGroup &signal_semaphores,
+	                       const myvk::Ptr<myvk::Fence> &fence);
 
 	inline void SetRoot(hashdag::NodePointer<uint32_t> root) { m_root = root; }
 	inline auto GetRoot() const { return m_root; }
