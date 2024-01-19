@@ -40,7 +40,7 @@ private:
 		Word &child_mask = unpacked_node[0];
 		std::span<Word, 8> children = std::span<Word, 9>{unpacked_node}.template subspan<1>();
 
-		std::array<NodePointer<Word>, 9> new_children;
+		std::array<NodePointer<Word>, 8> new_children;
 		for (Word i = 0; i < 8; ++i)
 			new_children[i] = children[i];
 

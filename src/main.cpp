@@ -48,21 +48,22 @@ struct AABBEditor {
 };
 
 template <bool Fill = true> struct SphereEditor {
-	glm::vec3 center;
-	float r2;
+	uint32_t level;
+	glm::u32vec3 center;
+	uint64_t r2;
 	inline hashdag::EditType EditNode(const hashdag::NodeCoord<uint32_t> &coord, hashdag::NodePointer<uint32_t>) const {
-		auto lb = coord.GetLowerBound<float>(), ub = coord.GetUpperBound<float>();
-		glm::vec3 lb_dist = glm::vec3{lb.x, lb.y, lb.z} - center;
-		glm::vec3 ub_dist = glm::vec3{ub.x, ub.y, ub.z} - center;
-		glm::vec3 lb_dist_2 = lb_dist * lb_dist;
-		glm::vec3 ub_dist_2 = ub_dist * ub_dist;
+		auto lb = coord.GetLowerBoundAtLevel(level), ub = coord.GetUpperBoundAtLevel(level);
+		glm::i64vec3 lb_dist = glm::i64vec3{lb.x, lb.y, lb.z} - glm::i64vec3(center);
+		glm::i64vec3 ub_dist = glm::i64vec3{ub.x, ub.y, ub.z} - glm::i64vec3(center);
+		glm::u64vec3 lb_dist_2 = lb_dist * lb_dist;
+		glm::u64vec3 ub_dist_2 = ub_dist * ub_dist;
 
-		glm::vec3 max_dist_2 = glm::max(lb_dist_2, ub_dist_2);
-		float max_n2 = max_dist_2.x + max_dist_2.y + max_dist_2.z;
+		glm::u64vec3 max_dist_2 = glm::max(lb_dist_2, ub_dist_2);
+		uint64_t max_n2 = max_dist_2.x + max_dist_2.y + max_dist_2.z;
 		if (max_n2 <= r2)
 			return Fill ? hashdag::EditType::kFill : hashdag::EditType::kClear;
 
-		float min_n2 = 0.0f;
+		uint64_t min_n2 = 0;
 		if (lb_dist.x > 0)
 			min_n2 += lb_dist_2.x;
 		if (ub_dist.x < 0)
@@ -79,9 +80,9 @@ template <bool Fill = true> struct SphereEditor {
 		return min_n2 > r2 ? hashdag::EditType::kNotAffected : hashdag::EditType::kProceed;
 	}
 	inline bool EditVoxel(const hashdag::NodeCoord<uint32_t> &coord, bool voxel) const {
-		auto p = coord.GetCenter<float>();
-		glm::vec3 p_dist = glm::vec3{p.x, p.y, p.z} - center;
-		float p_n2 = glm::dot(p_dist, p_dist);
+		auto p = coord.pos;
+		glm::i64vec3 p_dist = glm::i64vec3{p.x, p.y, p.z} - glm::i64vec3(center);
+		uint64_t p_n2 = p_dist.x * p_dist.x + p_dist.y * p_dist.y + p_dist.z * p_dist.z;
 		if constexpr (Fill)
 			return voxel || p_n2 <= r2;
 		else
@@ -160,7 +161,8 @@ int main() {
 	//     0));
 
 	auto dag_node_pool = myvk::MakePtr<DAGNodePool>(generic_queue, sparse_queue,
-	                                                hashdag::Config<uint32_t>::MakeDefault(17, 9, 14, 2, 7, 11));
+	                                                hashdag::Config<uint32_t>::MakeDefault(16, 9, 14, 2, 7, 11));
+
 	auto edit_ns = ns([&]() {
 		dag_node_pool->SetRoot(dag_node_pool->LibForkEdit(&busy_pool, dag_node_pool->GetRoot(),
 		                                                  AABBEditor{
@@ -194,7 +196,10 @@ int main() {
 			return;
 		edit_future = edit_pool.submit_task([dag_node_pool, device, editor]() {
 			hashdag::NodePointer<uint32_t> new_root_ptr;
-			new_root_ptr = dag_node_pool->LibForkEdit(&busy_pool, dag_node_pool->GetRoot(), editor);
+
+			auto edit_ns = ns(
+			    [&]() { new_root_ptr = dag_node_pool->LibForkEdit(&busy_pool, dag_node_pool->GetRoot(), editor, 10); });
+			printf("edit cost %lf ms\n", (double)edit_ns / 1000000.0);
 			auto fence = myvk::Fence::Create(device);
 			if (dag_node_pool->FlushMissingPages({}, {}, fence))
 				fence->Wait();
@@ -232,18 +237,19 @@ int main() {
 			    dag_node_pool->GLMTraversal<float>(dag_node_pool->GetRoot(), camera->m_position, camera->GetLook());
 			if (p) {
 				glm::u32vec3 up = *p * glm::vec3(dag_node_pool->GetConfig().GetResolution());
+				auto r2 = uint64_t(edit_radius * edit_radius);
 
 				if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
-					float r = edit_radius / float(dag_node_pool->GetConfig().GetResolution());
 					push_edit(SphereEditor<false>{
-					    .center = *p,
-					    .r2 = r * r,
+					    .level = dag_node_pool->GetConfig().GetLowestLevel(),
+					    .center = up,
+					    .r2 = r2,
 					});
 				} else if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
-					float r = edit_radius / float(dag_node_pool->GetConfig().GetResolution());
 					push_edit(SphereEditor{
-					    .center = *p,
-					    .r2 = r * r,
+					    .level = dag_node_pool->GetConfig().GetLowestLevel(),
+					    .center = up,
+					    .r2 = r2,
 					});
 				}
 				// printf("%f %f %f\n", p->x, p->y, p->z);

@@ -6,11 +6,14 @@
 #ifndef VKHASHDAG_VKNODEPOOL_HPP
 #define VKHASHDAG_VKNODEPOOL_HPP
 
+#include <atomic>
 #include <cuckoohash_map.hh>
+#include <memory>
+
 #include <hashdag/NodePool.hpp>
 #include <hashdag/NodePoolGLMTraversal.hpp>
 #include <hashdag/NodePoolLibForkEdit.hpp>
-#include <memory>
+
 #include <myvk/Buffer.hpp>
 #include <myvk/DescriptorSet.hpp>
 #include <myvk/Fence.hpp>
@@ -23,7 +26,7 @@ public:
 	using WordSpanHasher = hashdag::MurmurHasher32;
 
 private:
-	std::vector<uint32_t> m_bucket_words;
+	std::unique_ptr<std::atomic_uint32_t[]> m_bucket_words;
 	std::vector<std::unique_ptr<uint32_t[]>> m_pages;
 	std::array<hashdag::EditMutex, 1024> m_edit_mutexes{};
 
@@ -33,8 +36,18 @@ private:
 	inline hashdag::EditMutex &GetBucketEditMutex(uint32_t bucket_id) {
 		return m_edit_mutexes[bucket_id % m_edit_mutexes.size()];
 	}
-	inline uint32_t GetBucketWords(uint32_t bucket_id) const { return m_bucket_words[bucket_id]; }
-	inline void SetBucketWords(uint32_t bucket_id, uint32_t words) { m_bucket_words[bucket_id] = words; }
+	inline uint32_t GetBucketWords(uint32_t bucket_id) const {
+		return m_bucket_words[bucket_id].load(std::memory_order_acquire);
+	}
+	inline uint32_t GetBucketWordsAtomic(uint32_t bucket_id) const {
+		return m_bucket_words[bucket_id].load(std::memory_order_acquire);
+	}
+	inline void SetBucketWords(uint32_t bucket_id, uint32_t words) {
+		m_bucket_words[bucket_id].store(words, std::memory_order_release);
+	}
+	inline void SetBucketWordsAtomic(uint32_t bucket_id, uint32_t words) {
+		m_bucket_words[bucket_id].store(words, std::memory_order_release);
+	}
 	inline const uint32_t *ReadPage(uint32_t page_id) const { return m_pages[page_id].get(); }
 	inline void ZeroPage(uint32_t page_id, uint32_t page_offset, uint32_t zero_words) {
 		std::fill(m_pages[page_id].get() + page_offset, m_pages[page_id].get() + page_offset + zero_words, 0);
@@ -94,7 +107,7 @@ public:
 	    : hashdag::NodePoolBase<DAGNodePool, uint32_t>(config), m_device_ptr{main_queue_ptr->GetDevicePtr()},
 	      m_main_queue_ptr{main_queue_ptr}, m_sparse_queue_ptr{sparse_queue_ptr} {
 
-		m_bucket_words.resize(GetConfig().GetTotalBuckets());
+		m_bucket_words = std::make_unique<std::atomic_uint32_t[]>(GetConfig().GetTotalBuckets());
 		m_pages.resize(GetConfig().GetTotalPages());
 
 		create_buffer();

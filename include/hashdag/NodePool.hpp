@@ -35,6 +35,8 @@ concept NodePool = Hasher<typename T::WordSpanHasher, Word> && requires(T e, con
 template <typename T, typename Word>
 concept ThreadSafeEditNodePool = NodePool<T, Word> && requires(T e, const T ce) {
 	{ e.GetBucketEditMutex(Word{} /* Bucket Index */) } -> std::convertible_to<EditMutex &>;
+	{ ce.GetBucketWordsAtomic(Word{} /* Bucket Index */) } -> std::convertible_to<Word>;
+	e.SetBucketWordsAtomic(Word{} /* Bucket Index */, Word{} /* Words */);
 };
 
 template <typename Derived, std::unsigned_integral Word> class NodePoolBase {
@@ -46,6 +48,7 @@ public:
 
 	template <typename, std::unsigned_integral> friend class NodePoolLibForkEdit;
 	template <typename, std::unsigned_integral> friend class NodePoolGLMTraversal;
+	template <typename, std::unsigned_integral> friend class NodePoolAsyncEdit;
 
 	Config<Word> m_config;
 	std::vector<Word> m_bucket_level_bases;
@@ -58,15 +61,23 @@ public:
 	inline void write_page(Word page_id, Word page_offset, std::span<const Word> word_span) {
 		static_cast<Derived *>(this)->WritePage(page_id, page_offset, word_span);
 	}
-	inline Word get_bucket_words(Word bucket_id) const {
-		return static_cast<const Derived *>(this)->GetBucketWords(bucket_id);
-	}
 	inline EditMutex &get_bucket_edit_mutex(Word bucket_id) {
 		static_assert(ThreadSafeEditNodePool<Derived, Word>);
 		return static_cast<Derived *>(this)->GetBucketEditMutex(bucket_id);
 	}
-	inline void set_bucket_words(Word bucket_id, Word words) {
-		return static_cast<Derived *>(this)->SetBucketWords(bucket_id, words);
+	template <bool ThreadSafe> inline Word get_bucket_words(Word bucket_id) const {
+		if constexpr (ThreadSafe) {
+			static_assert(ThreadSafeEditNodePool<Derived, Word>);
+			return static_cast<const Derived *>(this)->GetBucketWordsAtomic(bucket_id);
+		} else
+			return static_cast<const Derived *>(this)->GetBucketWords(bucket_id);
+	}
+	template <bool ThreadSafe> inline void set_bucket_words(Word bucket_id, Word words) {
+		if constexpr (ThreadSafe) {
+			static_assert(ThreadSafeEditNodePool<Derived, Word>);
+			static_cast<Derived *>(this)->SetBucketWordsAtomic(bucket_id, words);
+		} else
+			static_cast<Derived *>(this)->SetBucketWords(bucket_id, words);
 	}
 
 	inline const Word *read_node(Word node) const {
@@ -129,11 +140,11 @@ public:
 	}
 
 	template <size_t NodeSpanExtent>
-	inline NodePointer<Word> append_node(Word bucket_index, Word bucket_words,
-	                                     std::span<const Word, NodeSpanExtent> node_span) {
+	inline std::tuple<NodePointer<Word>, Word> append_node(Word bucket_index, Word bucket_words,
+	                                                       std::span<const Word, NodeSpanExtent> node_span) {
 		// If the bucket is full, return Null
 		if (bucket_words + node_span.size() > m_config.GetWordsPerBucket())
-			return NodePointer<Word>::Null();
+			return {NodePointer<Word>::Null(), 0u};
 
 		Word dst_page_slot = bucket_words >> m_config.word_bits_per_page; // PageID in bucket
 		Word dst_page_offset = bucket_words & (m_config.GetWordsPerPage() - 1);
@@ -149,10 +160,8 @@ public:
 		}
 
 		write_page(dst_page_index, dst_page_offset, node_span);
-		set_bucket_words(bucket_index,
-		                 ((dst_page_slot << m_config.word_bits_per_page) | dst_page_offset) + node_span.size());
-
-		return (dst_page_index << m_config.word_bits_per_page) | dst_page_offset;
+		Word new_bucket_words = ((dst_page_slot << m_config.word_bits_per_page) | dst_page_offset) + node_span.size();
+		return {(dst_page_index << m_config.word_bits_per_page) | dst_page_offset, new_bucket_words};
 	}
 
 	template <bool ThreadSafe, size_t NodeSpanExtent>
@@ -163,13 +172,8 @@ public:
 		                                                         (m_config.GetBucketsAtLevel(level) - 1));
 
 		if constexpr (ThreadSafe) {
-			auto &mutex = get_bucket_edit_mutex(bucket_index);
-
-			Word shared_bucket_words;
+			Word shared_bucket_words = get_bucket_words<true>(bucket_index);
 			{
-				std::shared_lock<EditMutex> shared_lock{mutex};
-
-				shared_bucket_words = get_bucket_words(bucket_index);
 				NodePointer<Word> find_node_ptr =
 				    find_node(get_node_words, bucket_index, shared_bucket_words, 0, node_span);
 				if (find_node_ptr)
@@ -177,25 +181,33 @@ public:
 			}
 
 			{
-				std::unique_lock<EditMutex> unique_lock{mutex};
+				std::unique_lock<EditMutex> unique_lock{get_bucket_edit_mutex(bucket_index)};
 
-				Word unique_bucket_words = get_bucket_words(bucket_index);
+				Word unique_bucket_words = get_bucket_words<true>(bucket_index);
 				NodePointer<Word> find_node_ptr =
 				    find_node(get_node_words, bucket_index, unique_bucket_words, shared_bucket_words, node_span);
 				if (find_node_ptr)
 					return find_node_ptr;
 
-				NodePointer<Word> append_node_ptr = append_node(bucket_index, unique_bucket_words, node_span);
-				return append_node_ptr ? append_node_ptr : fallback_ptr;
+				auto [append_node_ptr, new_bucket_words] = append_node(bucket_index, unique_bucket_words, node_span);
+				if (append_node_ptr) {
+					set_bucket_words<true>(bucket_index, new_bucket_words);
+					return append_node_ptr;
+				}
+				return fallback_ptr;
 			}
 		} else {
-			const Word bucket_words = get_bucket_words(bucket_index);
+			const Word bucket_words = get_bucket_words<false>(bucket_index);
 			NodePointer<Word> find_node_ptr = find_node(get_node_words, bucket_index, bucket_words, 0, node_span);
 			if (find_node_ptr)
 				return find_node_ptr;
 
-			NodePointer<Word> append_node_ptr = append_node(bucket_index, bucket_words, node_span);
-			return append_node_ptr ? append_node_ptr : fallback_ptr;
+			auto [append_node_ptr, new_bucket_words] = append_node(bucket_index, bucket_words, node_span);
+			if (append_node_ptr) {
+				set_bucket_words<false>(bucket_index, new_bucket_words);
+				return append_node_ptr;
+			}
+			return fallback_ptr;
 		}
 	}
 

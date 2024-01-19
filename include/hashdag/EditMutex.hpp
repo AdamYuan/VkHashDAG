@@ -10,7 +10,7 @@
 
 namespace hashdag {
 
-using EditMutex = std::shared_mutex;
+using EditMutex = std::mutex;
 
 }
 
