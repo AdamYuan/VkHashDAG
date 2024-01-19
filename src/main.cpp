@@ -117,7 +117,7 @@ template <typename Func> inline long ns(Func &&func) {
 	return std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count();
 }
 
-lf::busy_pool busy_pool(8);
+lf::busy_pool busy_pool(12);
 
 BS::thread_pool edit_pool(1);
 std::future<hashdag::NodePointer<uint32_t>> edit_future;
@@ -157,8 +157,7 @@ int main() {
 	}
 
 	// auto dag_node_pool =
-	//     myvk::MakePtr<DAGNodePool>(generic_queue, sparse_queue, hashdag::Config<uint32_t>::MakeDefault(17, 9, 11,
-	//     0));
+	//    myvk::MakePtr<DAGNodePool>(generic_queue, sparse_queue, hashdag::Config<uint32_t>::MakeDefault(17, 9, 11, 0));
 
 	auto dag_node_pool = myvk::MakePtr<DAGNodePool>(generic_queue, sparse_queue,
 	                                                hashdag::Config<uint32_t>::MakeDefault(16, 9, 14, 2, 7, 11));
@@ -182,7 +181,7 @@ int main() {
 	printf("edit cost %lf ms\n", (double)edit_ns / 1000000.0);
 	auto flush_ns = ns([&]() {
 		auto fence = myvk::Fence::Create(device);
-		if (dag_node_pool->FlushMissingPages({}, {}, fence))
+		if (dag_node_pool->Flush({}, {}, fence))
 			fence->Wait();
 	});
 	printf("flush cost %lf ms\n", (double)flush_ns / 1000000.0);
@@ -200,9 +199,12 @@ int main() {
 			auto edit_ns = ns(
 			    [&]() { new_root_ptr = dag_node_pool->LibForkEdit(&busy_pool, dag_node_pool->GetRoot(), editor, 10); });
 			printf("edit cost %lf ms\n", (double)edit_ns / 1000000.0);
-			auto fence = myvk::Fence::Create(device);
-			if (dag_node_pool->FlushMissingPages({}, {}, fence))
-				fence->Wait();
+			auto flush_ns = ns([&]() {
+				auto fence = myvk::Fence::Create(device);
+				if (dag_node_pool->Flush({}, {}, fence))
+					fence->Wait();
+			});
+			printf("flush cost %lf ms\n", (double)flush_ns / 1000000.0);
 			return new_root_ptr;
 		});
 	};
