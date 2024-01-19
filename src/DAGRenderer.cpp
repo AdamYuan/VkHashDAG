@@ -13,7 +13,7 @@ void DAGRenderer::create_pipeline(const myvk::Ptr<myvk::RenderPass> &render_pass
 	                                                    {VkPushConstantRange{
 	                                                        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
 	                                                        .offset = 0,
-	                                                        .size = 12 * sizeof(float) + 4 * sizeof(uint32_t),
+	                                                        .size = 13 * sizeof(float) + 4 * sizeof(uint32_t),
 	                                                    }});
 
 	constexpr uint32_t kQuadVertSpv[] = {
@@ -56,13 +56,18 @@ void DAGRenderer::CmdDrawPipeline(const myvk::Ptr<myvk::CommandBuffer> &command_
 	command_buffer->CmdSetScissor({{{0, 0}, {width, height}}});
 
 	static_assert(sizeof(float) == sizeof(uint32_t));
-	uint32_t pc_data[16];
+	uint32_t pc_data[17];
 	*(glm::vec3 *)(pc_data) = camera.m_position;
 	*(Camera::LookSideUp *)(pc_data + 3) = camera.GetLookSideUp(aspect_ratio);
 	pc_data[12] = width;
 	pc_data[13] = height;
 	pc_data[14] = *m_dag_node_pool_ptr->GetRoot();
 	pc_data[15] = m_dag_node_pool_ptr->GetConfig().GetNodeLevels();
+	float inv_2tan_half_fov = 1.0f / (2.0f * glm::tan(0.5f * camera.m_fov));
+	float screen_divisor = 1.0f;
+	float screen_tolerance = 1.0f / (float(height) / screen_divisor);
+	float projection_factor = inv_2tan_half_fov / screen_tolerance;
+	*(float *)(pc_data + 16) = projection_factor;
 	command_buffer->CmdPushConstants(m_pipeline->GetPipelineLayoutPtr(), VK_SHADER_STAGE_FRAGMENT_BIT, 0,
 	                                 sizeof(pc_data), pc_data);
 	command_buffer->CmdDraw(3, 1, 0, 0);

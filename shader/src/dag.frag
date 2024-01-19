@@ -6,6 +6,7 @@ layout(location = 0) out vec4 oColor;
 layout(push_constant) uniform uuPushConstant {
 	float uPosX, uPosY, uPosZ, uLookX, uLookY, uLookZ, uSideX, uSideY, uSideZ, uUpX, uUpY, uUpZ;
 	uint uWidth, uHeight, uDAGRoot, uDAGNodeLevels;
+	float uProjectionFactor;
 };
 
 /*
@@ -56,12 +57,19 @@ uint DAG_GetLeafFirstChildBits(in const uint node) {
 	       ((l1 & 0x00FF0000u) == 0u ? 0u : 0x40u) | ((l1 & 0xFF000000u) == 0u ? 0u : 0x80u);
 }
 
-bool DAG_RayMarchLeaf(uint root, vec3 o, vec3 d, out vec3 o_pos, out vec3 o_normal, out uint o_iter) {
+bool DAG_RayMarch(in const uint root,
+                  in const float proj_factor,
+                  vec3 o,
+                  vec3 d,
+                  out vec3 o_pos,
+                  out vec3 o_normal,
+                  out uint o_iter) {
 	if (root == -1)
 		return false;
 
 	uint iter = 0;
 
+	o += 1.0;
 	const float epsilon = uintBitsToFloat((127u - STACK_SIZE) << 23u); // exp2f(-STACK_SIZE)
 	d.x = abs(d.x) > epsilon ? d.x : (d.x >= 0 ? epsilon : -epsilon);
 	d.y = abs(d.y) > epsilon ? d.y : (d.y >= 0 ? epsilon : -epsilon);
@@ -124,7 +132,7 @@ bool DAG_RayMarchLeaf(uint root, vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm
 			vec3 t_center = half_scale_exp2 * t_coef + t_corner;
 
 			if (t_min <= tv_max) {
-				if (scale < leaf_scale) // leaf node TODO: skip subpixel voxels
+				if (scale < leaf_scale || scale_exp2 * proj_factor < tc_max)
 					break;
 
 				// PUSH
@@ -230,6 +238,7 @@ bool DAG_RayMarchLeaf(uint root, vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm
 		o_pos.y = norm.y > 0 ? pos.y + scale_exp2 + EPS * 2 : pos.y - EPS;
 	if (norm.z != 0)
 		o_pos.z = norm.z > 0 ? pos.z + scale_exp2 + EPS * 2 : pos.z - EPS;
+	o_pos -= 1.0;
 	o_normal = norm;
 	o_iter = iter;
 
@@ -250,8 +259,9 @@ void main() {
 
 	vec3 pos, norm;
 	uint iter;
-	bool hit = DAG_RayMarchLeaf(uDAGRoot, o + 1.0, d, pos, norm, iter);
+	bool hit = DAG_RayMarch(uDAGRoot, uProjectionFactor, o, d, pos, norm, iter);
 
 	oColor = hit ? vec4(norm * .5 + .5, 1.0) : vec4(0, 0, 0, 1);
 	// oColor = vec4(Heat(float(iter) / 128.0), 1.0);
+	oColor = vec4(hit ? vec3(max(dot(norm, normalize(vec3(4, 5, 3))), 0.0) * .5 + .5) : vec3(0), 1.0);
 }
