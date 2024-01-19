@@ -121,6 +121,9 @@ lf::busy_pool busy_pool(8);
 BS::thread_pool edit_pool(1);
 std::future<hashdag::NodePointer<uint32_t>> edit_future;
 
+float edit_radius = 128.0f;
+int render_type = 0;
+
 int main() {
 	GLFWwindow *window = myvk::GLFWCreateWindow("Test", 640, 480, true);
 	glfwSetKeyCallback(window, key_callback);
@@ -152,11 +155,12 @@ int main() {
 		render_pass = myvk::RenderPass::Create(device, state);
 	}
 
-	auto dag_node_pool =
-	    myvk::MakePtr<DAGNodePool>(generic_queue, sparse_queue, hashdag::Config<uint32_t>::MakeDefault(17, 9, 11, 0));
+	// auto dag_node_pool =
+	//     myvk::MakePtr<DAGNodePool>(generic_queue, sparse_queue, hashdag::Config<uint32_t>::MakeDefault(17, 9, 11,
+	//     0));
 
-	// auto dag_node_pool = myvk::MakePtr<DAGNodePool>(generic_queue, sparse_queue,
-	//                                                 hashdag::Config<uint32_t>::MakeDefault(17, 9, 14, 0, 7, 13));
+	auto dag_node_pool = myvk::MakePtr<DAGNodePool>(generic_queue, sparse_queue,
+	                                                hashdag::Config<uint32_t>::MakeDefault(17, 9, 14, 2, 7, 11));
 	auto edit_ns = ns([&]() {
 		dag_node_pool->SetRoot(dag_node_pool->LibForkEdit(&busy_pool, dag_node_pool->GetRoot(),
 		                                                  AABBEditor{
@@ -219,40 +223,43 @@ int main() {
 
 		glfwPollEvents();
 
-		if (cursor_captured)
-			camera->MoveControl(window, float(delta));
-
 		pop_edit_result();
 
-		std::optional<glm::vec3> p =
-		    dag_node_pool->GLMTraversal<float>(dag_node_pool->GetRoot(), camera->m_position, camera->GetLook());
-		if (p) {
-			glm::u32vec3 up = *p * glm::vec3(dag_node_pool->GetConfig().GetResolution());
+		if (cursor_captured) {
+			camera->MoveControl(window, float(delta));
 
-			if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
-				float r = 128.0f / float(dag_node_pool->GetConfig().GetResolution());
-				push_edit(SphereEditor<false>{
-				    .center = *p,
-				    .r2 = r * r,
-				});
-			} else if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
-				float r = 128.0f / float(dag_node_pool->GetConfig().GetResolution());
-				push_edit(SphereEditor{
-				    .center = *p,
-				    .r2 = r * r,
-				});
+			std::optional<glm::vec3> p =
+			    dag_node_pool->GLMTraversal<float>(dag_node_pool->GetRoot(), camera->m_position, camera->GetLook());
+			if (p) {
+				glm::u32vec3 up = *p * glm::vec3(dag_node_pool->GetConfig().GetResolution());
+
+				if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
+					float r = edit_radius / float(dag_node_pool->GetConfig().GetResolution());
+					push_edit(SphereEditor<false>{
+					    .center = *p,
+					    .r2 = r * r,
+					});
+				} else if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
+					float r = edit_radius / float(dag_node_pool->GetConfig().GetResolution());
+					push_edit(SphereEditor{
+					    .center = *p,
+					    .r2 = r * r,
+					});
+				}
+				// printf("%f %f %f\n", p->x, p->y, p->z);
 			}
-			// printf("%f %f %f\n", p->x, p->y, p->z);
 		}
 
 		myvk::ImGuiNewFrame();
 		ImGui::Begin("Test");
-		ImGui::Text("%f", ImGui::GetIO().Framerate);
+		ImGui::Text("FPS %f", ImGui::GetIO().Framerate);
+		ImGui::DragFloat("Radius", &edit_radius, 1.0f, 1.0f, 2048.0f);
+		ImGui::DragFloat("Speed", &camera->m_speed, 0.0001f, 0.0001f, 0.25f);
+		ImGui::Combo("Type", &render_type, "Diffuse\0Normal\0Iteration");
 		ImGui::End();
 		ImGui::Render();
 
 		if (frame_manager->NewFrame()) {
-			uint32_t image_index = frame_manager->GetCurrentImageIndex();
 			uint32_t current_frame = frame_manager->GetCurrentFrame();
 			const auto &command_buffer = frame_manager->GetCurrentCommandBuffer();
 
@@ -262,7 +269,8 @@ int main() {
 			                                   {frame_manager->GetCurrentSwapchainImageView()},
 			                                   {{{0.5f, 0.5f, 0.5f, 1.0f}}});
 			dag_renderer->CmdDrawPipeline(command_buffer, *camera, //
-			                              frame_manager->GetExtent().width, frame_manager->GetExtent().height);
+			                              frame_manager->GetExtent().width, frame_manager->GetExtent().height,
+			                              static_cast<DAGRenderType>(render_type));
 			command_buffer->CmdNextSubpass();
 			imgui_renderer->CmdDrawPipeline(command_buffer, current_frame);
 			command_buffer->CmdEndRenderPass();

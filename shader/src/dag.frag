@@ -7,6 +7,7 @@ layout(push_constant) uniform uuPushConstant {
 	float uPosX, uPosY, uPosZ, uLookX, uLookY, uLookZ, uSideX, uSideY, uSideZ, uUpX, uUpY, uUpZ;
 	uint uWidth, uHeight, uDAGRoot, uDAGNodeLevels;
 	float uProjectionFactor;
+	uint uType;
 };
 
 /*
@@ -261,7 +262,10 @@ void main() {
 	uint iter;
 	bool hit = DAG_RayMarch(uDAGRoot, uProjectionFactor, o, d, pos, norm, iter);
 
-	oColor = hit ? vec4(norm * .5 + .5, 1.0) : vec4(0, 0, 0, 1);
-	// oColor = vec4(Heat(float(iter) / 128.0), 1.0);
-	oColor = vec4(hit ? vec3(max(dot(norm, normalize(vec3(4, 5, 3))), 0.0) * .5 + .5) : vec3(0), 1.0);
+	if (uType == 0)
+		oColor = vec4(hit ? vec3(max(dot(norm, normalize(vec3(4, 5, 3))), 0.0) * .5 + .5) : vec3(0), 1.0);
+	else if (uType == 1)
+		oColor = hit ? vec4(norm * .5 + .5, 1.0) : vec4(0, 0, 0, 1);
+	else
+		oColor = vec4(Heat(float(iter) / 128.0), 1.0);
 }

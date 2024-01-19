@@ -13,6 +13,8 @@
 #include "Camera.hpp"
 #include "DAGNodePool.hpp"
 
+enum class DAGRenderType { kDiffuse, kNormal, kIteration };
+
 class DAGRenderer {
 private:
 	myvk::Ptr<DAGNodePool> m_dag_node_pool_ptr;
@@ -27,7 +29,7 @@ public:
 		create_pipeline(render_pass, subpass);
 	}
 	void CmdDrawPipeline(const myvk::Ptr<myvk::CommandBuffer> &command_buffer, const Camera &camera, uint32_t width,
-	                     uint32_t height) const;
+	                     uint32_t height, DAGRenderType render_type) const;
 };
 
 #endif // VKHASHDAG_DAGRENDERER_HPP
