@@ -95,7 +95,7 @@ private:
 		uint32_t *p_mapped_data;
 	};
 	std::unique_ptr<GPUPage[]> m_gpu_pages;
-	uint32_t m_gpu_page_count, m_page_bits_per_gpu_page;
+	uint32_t m_total_gpu_pages, m_page_bits_per_gpu_page;
 
 	myvk::Ptr<myvk::DescriptorSet> m_descriptor_set;
 

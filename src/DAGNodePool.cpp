@@ -35,12 +35,12 @@ void DAGNodePool::create_gpu_pages() {
 	m_gpu_page_memory_requirements.size =
 	    (1u << (GetConfig().word_bits_per_page + m_page_bits_per_gpu_page)) * sizeof(uint32_t);
 
-	m_gpu_page_count = 1 + (GetConfig().GetTotalPages() >> m_page_bits_per_gpu_page);
-	m_gpu_pages = std::make_unique<GPUPage[]>(m_gpu_page_count);
+	m_total_gpu_pages = 1 + (GetConfig().GetTotalPages() >> m_page_bits_per_gpu_page);
+	m_gpu_pages = std::make_unique<GPUPage[]>(m_total_gpu_pages);
 }
 void DAGNodePool::destroy_buffer() {
 	std::vector<VmaAllocation> allocations;
-	for (uint32_t i = 0; i < m_gpu_page_count; ++i)
+	for (uint32_t i = 0; i < m_total_gpu_pages; ++i)
 		if (m_gpu_pages[i].allocation != VK_NULL_HANDLE)
 			allocations.push_back(m_gpu_pages[i].allocation);
 	if (!allocations.empty())
