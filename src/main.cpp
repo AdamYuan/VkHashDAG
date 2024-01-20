@@ -119,7 +119,7 @@ template <typename Func> inline long ns(Func &&func) {
 
 lf::busy_pool busy_pool(12);
 
-BS::thread_pool edit_pool(1), gc_pool(12);
+BS::thread_pool edit_pool(1);
 std::future<hashdag::NodePointer<uint32_t>> edit_future;
 
 float edit_radius = 128.0f;
@@ -175,20 +175,6 @@ int main() {
 		                                                       .level = dag_node_pool->GetConfig().GetLowestLevel(),
 		                                                       .aabb_min = {1001, 1000, 1000},
 		                                                       .aabb_max = {10000, 10000, 10000},
-		                                                   },
-		                                                   10));
-		dag_node_pool->SetRoot(dag_node_pool->ThreadedEdit(&busy_pool, dag_node_pool->GetRoot(),
-		                                                   SphereEditor<false>{
-		                                                       .level = dag_node_pool->GetConfig().GetLowestLevel(),
-		                                                       .center = {5005, 5000, 5000},
-		                                                       .r2 = 2000 * 2000,
-		                                                   },
-		                                                   10));
-		dag_node_pool->SetRoot(dag_node_pool->ThreadedEdit(&busy_pool, dag_node_pool->GetRoot(),
-		                                                   SphereEditor<false>{
-		                                                       .level = dag_node_pool->GetConfig().GetLowestLevel(),
-		                                                       .center = {10000, 10000, 10000},
-		                                                       .r2 = 4000 * 4000,
 		                                                   },
 		                                                   10));
 	});
@@ -280,12 +266,7 @@ int main() {
 		ImGui::DragFloat("Speed", &camera->m_speed, 0.0001f, 0.0001f, 0.25f);
 		ImGui::Combo("Type", &render_type, "Diffuse\0Normal\0Iteration");
 		if (ImGui::Button("GC")) {
-			auto gc_ns = ns([&]() {
-				dag_node_pool->ThreadedGC(dag_node_pool->GetRoot(), 12, [&](auto &&func) {
-					return gc_pool.submit_task(std::forward<std::decay_t<decltype(func)>>(func));
-				});
-			});
-			printf("GC cost %lf ms\n", (double)gc_ns / 1000000.0);
+			dag_node_pool->ThreadedGC(&busy_pool, dag_node_pool->GetRoot());
 		}
 		ImGui::End();
 		ImGui::Render();
