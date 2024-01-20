@@ -46,9 +46,9 @@ private:
 public:
 #endif
 
-	template <typename, std::unsigned_integral> friend class NodePoolLibForkEdit;
-	template <typename, std::unsigned_integral> friend class NodePoolGLMTraversal;
-	template <typename, std::unsigned_integral> friend class NodePoolAsyncEdit;
+	template <typename, std::unsigned_integral> friend class NodePoolThreadedEdit;
+	template <typename, std::unsigned_integral> friend class NodePoolLibForkGC;
+	template <typename, std::unsigned_integral> friend class NodePoolTraversal;
 
 	Config<Word> m_config;
 	std::vector<Word> m_bucket_level_bases;

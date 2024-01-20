@@ -5,8 +5,8 @@
 // Threaded NodePool Edit with libfork
 
 #pragma once
-#ifndef VKHASHDAG_NODEPOOLLIBFORKEDIT_HPP
-#define VKHASHDAG_NODEPOOLLIBFORKEDIT_HPP
+#ifndef VKHASHDAG_NODEPOOLTHREADEDEDIT_HPP
+#define VKHASHDAG_NODEPOOLTHREADEDEDIT_HPP
 
 #include "NodePool.hpp"
 
@@ -15,7 +15,7 @@
 
 namespace hashdag {
 
-template <typename Derived, std::unsigned_integral Word> class NodePoolLibForkEdit {
+template <typename Derived, std::unsigned_integral Word> class NodePoolThreadedEdit {
 private:
 	inline const auto &get_node_pool() const {
 		return *static_cast<const NodePoolBase<Derived, Word> *>(static_cast<const Derived *>(this));
@@ -129,10 +129,10 @@ private:
 	} */
 
 public:
-	inline NodePoolLibForkEdit() { static_assert(std::is_base_of_v<NodePoolBase<Derived, Word>, Derived>); }
+	inline NodePoolThreadedEdit() { static_assert(std::is_base_of_v<NodePoolBase<Derived, Word>, Derived>); }
 
-	inline NodePointer<Word> LibForkEdit(lf::busy_pool *p_lf_pool, NodePointer<Word> root_ptr,
-	                                     const Editor<Word> auto &editor, Word max_task_level = -1) {
+	inline NodePointer<Word> ThreadedEdit(lf::busy_pool *p_lf_pool, NodePointer<Word> root_ptr,
+	                                      const Editor<Word> auto &editor, Word max_task_level = -1) {
 		get_node_pool().make_filled_node_pointers();
 
 		EditType edit_type = editor.EditNode({}, root_ptr);
@@ -161,4 +161,4 @@ public:
 
 } // namespace hashdag
 
-#endif // VKHASHDAG_NODEPOOLLIBFORKEDIT_HPP
+#endif // VKHASHDAG_NODEPOOLTHREADEDEDIT_HPP

@@ -27,14 +27,14 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
 
 struct AABBEditor {
 	uint32_t level;
-	hashdag::Vec3<uint32_t> aabb_min, aabb_max;
+	glm::u32vec3 aabb_min, aabb_max;
 	inline hashdag::EditType EditNode(const hashdag::NodeCoord<uint32_t> &coord, hashdag::NodePointer<uint32_t>) const {
 		auto lb = coord.GetLowerBoundAtLevel(level), ub = coord.GetUpperBoundAtLevel(level);
 		/* printf("(%d %d %d), (%d, %d, %d) -> %d\n", lb.x, lb.y, lb.z, ub.x, ub.y, ub.z,
 		       !ub.Any(std::less_equal<uint32_t>{}, aabb_min) && !lb.Any(std::greater_equal<uint32_t>{}, aabb_max)); */
-		if (ub.Any(std::less_equal<uint32_t>{}, aabb_min) || lb.Any(std::greater_equal<uint32_t>{}, aabb_max))
+		if (glm::any(glm::lessThanEqual(ub, aabb_min)) || glm::any(glm::greaterThanEqual(lb, aabb_max)))
 			return hashdag::EditType::kNotAffected;
-		if (lb.All(std::greater_equal<uint32_t>{}, aabb_min) && ub.All(std::less_equal<uint32_t>{}, aabb_max))
+		if (glm::all(glm::greaterThanEqual(lb, aabb_min)) && glm::all(glm::lessThanEqual(ub, aabb_max)))
 			return hashdag::EditType::kFill;
 		return hashdag::EditType::kProceed;
 	}
@@ -42,8 +42,8 @@ struct AABBEditor {
 		/*if (coord.pos.All(std::greater_equal<uint32_t>{}, aabb_min) && coord.pos.All(std::less<uint32_t>{}, aabb_max))
 		    printf("(%d %d %d)\n", coord.pos.x, coord.pos.y, coord.pos.z);
 		*/
-		return voxel || coord.pos.All(std::greater_equal<uint32_t>{}, aabb_min) &&
-		                    coord.pos.All(std::less<uint32_t>{}, aabb_max);
+		return voxel ||
+		       glm::all(glm::greaterThanEqual(coord.pos, aabb_min)) && glm::all(glm::lessThan(coord.pos, aabb_max));
 	}
 };
 
@@ -53,8 +53,8 @@ template <bool Fill = true> struct SphereEditor {
 	uint64_t r2;
 	inline hashdag::EditType EditNode(const hashdag::NodeCoord<uint32_t> &coord, hashdag::NodePointer<uint32_t>) const {
 		auto lb = coord.GetLowerBoundAtLevel(level), ub = coord.GetUpperBoundAtLevel(level);
-		glm::i64vec3 lb_dist = glm::i64vec3{lb.x, lb.y, lb.z} - glm::i64vec3(center);
-		glm::i64vec3 ub_dist = glm::i64vec3{ub.x, ub.y, ub.z} - glm::i64vec3(center);
+		glm::i64vec3 lb_dist = glm::i64vec3{lb} - glm::i64vec3(center);
+		glm::i64vec3 ub_dist = glm::i64vec3{ub} - glm::i64vec3(center);
 		glm::u64vec3 lb_dist_2 = lb_dist * lb_dist;
 		glm::u64vec3 ub_dist_2 = ub_dist * ub_dist;
 
@@ -163,20 +163,20 @@ int main() {
 	                                                hashdag::Config<uint32_t>::MakeDefault(16, 9, 14, 2, 7, 11));
 
 	auto edit_ns = ns([&]() {
-		dag_node_pool->SetRoot(dag_node_pool->LibForkEdit(&busy_pool, dag_node_pool->GetRoot(),
-		                                                  AABBEditor{
-		                                                      .level = dag_node_pool->GetConfig().GetLowestLevel(),
-		                                                      .aabb_min = {0, 0, 0},
-		                                                      .aabb_max = {5000, 5000, 5000},
-		                                                  },
-		                                                  10));
-		dag_node_pool->SetRoot(dag_node_pool->LibForkEdit(&busy_pool, dag_node_pool->GetRoot(),
-		                                                  AABBEditor{
-		                                                      .level = dag_node_pool->GetConfig().GetLowestLevel(),
-		                                                      .aabb_min = {1001, 1000, 1000},
-		                                                      .aabb_max = {10000, 10000, 10000},
-		                                                  },
-		                                                  10));
+		dag_node_pool->SetRoot(dag_node_pool->ThreadedEdit(&busy_pool, dag_node_pool->GetRoot(),
+		                                                   AABBEditor{
+		                                                       .level = dag_node_pool->GetConfig().GetLowestLevel(),
+		                                                       .aabb_min = {0, 0, 0},
+		                                                       .aabb_max = {5000, 5000, 5000},
+		                                                   },
+		                                                   10));
+		dag_node_pool->SetRoot(dag_node_pool->ThreadedEdit(&busy_pool, dag_node_pool->GetRoot(),
+		                                                   AABBEditor{
+		                                                       .level = dag_node_pool->GetConfig().GetLowestLevel(),
+		                                                       .aabb_min = {1001, 1000, 1000},
+		                                                       .aabb_max = {10000, 10000, 10000},
+		                                                   },
+		                                                   10));
 	});
 	printf("edit cost %lf ms\n", (double)edit_ns / 1000000.0);
 	auto flush_ns = ns([&]() {
@@ -196,8 +196,9 @@ int main() {
 		edit_future = edit_pool.submit_task([dag_node_pool, device, editor]() {
 			hashdag::NodePointer<uint32_t> new_root_ptr;
 
-			auto edit_ns = ns(
-			    [&]() { new_root_ptr = dag_node_pool->LibForkEdit(&busy_pool, dag_node_pool->GetRoot(), editor, 10); });
+			auto edit_ns = ns([&]() {
+				new_root_ptr = dag_node_pool->ThreadedEdit(&busy_pool, dag_node_pool->GetRoot(), editor, 10);
+			});
 			printf("edit cost %lf ms\n", (double)edit_ns / 1000000.0);
 			auto flush_ns = ns([&]() {
 				auto fence = myvk::Fence::Create(device);
@@ -236,7 +237,7 @@ int main() {
 			camera->MoveControl(window, float(delta));
 
 			std::optional<glm::vec3> p =
-			    dag_node_pool->GLMTraversal<float>(dag_node_pool->GetRoot(), camera->m_position, camera->GetLook());
+			    dag_node_pool->Traversal<float>(dag_node_pool->GetRoot(), camera->m_position, camera->GetLook());
 			if (p) {
 				glm::u32vec3 up = *p * glm::vec3(dag_node_pool->GetConfig().GetResolution());
 				auto r2 = uint64_t(edit_radius * edit_radius);

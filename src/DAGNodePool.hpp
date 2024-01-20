@@ -11,8 +11,8 @@
 #include <memory>
 
 #include <hashdag/NodePool.hpp>
-#include <hashdag/NodePoolGLMTraversal.hpp>
-#include <hashdag/NodePoolLibForkEdit.hpp>
+#include <hashdag/NodePoolThreadedEdit.hpp>
+#include <hashdag/NodePoolTraversal.hpp>
 
 #include <myvk/Buffer.hpp>
 #include <myvk/DescriptorSet.hpp>
@@ -20,8 +20,8 @@
 #include <myvk/Semaphore.hpp>
 
 class DAGNodePool final : public hashdag::NodePoolBase<DAGNodePool, uint32_t>,
-                          public hashdag::NodePoolLibForkEdit<DAGNodePool, uint32_t>,
-                          public hashdag::NodePoolGLMTraversal<DAGNodePool, uint32_t> {
+                          public hashdag::NodePoolThreadedEdit<DAGNodePool, uint32_t>,
+                          public hashdag::NodePoolTraversal<DAGNodePool, uint32_t> {
 public:
 	using WordSpanHasher = hashdag::MurmurHasher32;
 

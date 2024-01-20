@@ -16,7 +16,7 @@
 
 namespace hashdag {
 
-template <typename Derived, std::unsigned_integral Word> class NodePoolGLMTraversal {
+template <typename Derived, std::unsigned_integral Word> class NodePoolTraversal {
 private:
 	inline const auto &get_node_pool() const {
 		return *static_cast<const NodePoolBase<Derived, Word> *>(static_cast<const Derived *>(this));
@@ -66,7 +66,7 @@ private:
 	};
 
 public:
-	inline NodePoolGLMTraversal() { static_assert(std::is_base_of_v<NodePoolBase<Derived, Word>, Derived>); }
+	inline NodePoolTraversal() { static_assert(std::is_base_of_v<NodePoolBase<Derived, Word>, Derived>); }
 
 	/*
 	 *  Copyright (c) 2009-2011, NVIDIA Corporation
@@ -96,8 +96,8 @@ public:
 	 */
 
 	template <std::floating_point F, glm::qualifier Q = glm::defaultp>
-	inline std::optional<glm::vec<3, F, Q>> GLMTraversal(NodePointer<Word> root_ptr, glm::vec<3, F, Q> o,
-	                                                     glm::vec<3, F, Q> d) const {
+	inline std::optional<glm::vec<3, F, Q>> Traversal(NodePointer<Word> root_ptr, glm::vec<3, F, Q> o,
+	                                                  glm::vec<3, F, Q> d) const {
 		static_assert(std::numeric_limits<F>::is_iec559);
 
 		using Vec3 = glm::vec<3, F, Q>;

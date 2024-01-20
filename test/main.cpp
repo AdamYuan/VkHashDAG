@@ -2,7 +2,7 @@
 #include "doctest.h"
 
 #include <hashdag/NodePool.hpp>
-#include <hashdag/NodePoolLibForkEdit.hpp>
+#include <hashdag/NodePoolThreadedEdit.hpp>
 
 #include <unordered_map>
 #include <unordered_set>
@@ -13,7 +13,7 @@ struct ZeroHasher {
 
 struct AABBEditor {
 	uint32_t level;
-	hashdag::Vec3<uint32_t> aabb_min, aabb_max;
+	glm::u32vec3 aabb_min, aabb_max;
 	inline hashdag::EditType EditNode(const hashdag::NodeCoord<uint32_t> &coord, hashdag::NodePointer<uint32_t>) const {
 		auto lb = coord.GetLowerBoundAtLevel(level), ub = coord.GetUpperBoundAtLevel(level);
 		/* printf("(%d %d %d), (%d, %d, %d) -> %d\n", lb.x, lb.y, lb.z, ub.x, ub.y, ub.z,
@@ -35,7 +35,7 @@ struct AABBEditor {
 
 struct SingleIterator {
 	uint32_t level;
-	hashdag::Vec3<uint32_t> pos;
+	glm::u32vec3 pos;
 	bool exist;
 	inline hashdag::IterateType IterateNode(const hashdag::NodeCoord<uint32_t> &coord,
 	                                        hashdag::NodePointer<uint32_t> node) const {
@@ -81,7 +81,7 @@ struct ZeroNodePool final : public hashdag::NodePoolBase<ZeroNodePool, uint32_t>
 	}
 };
 struct MurmurNodePool final : public hashdag::NodePoolBase<MurmurNodePool, uint32_t>,
-                              public hashdag::NodePoolLibForkEdit<MurmurNodePool, uint32_t> {
+                              public hashdag::NodePoolThreadedEdit<MurmurNodePool, uint32_t> {
 	using WordSpanHasher = hashdag::MurmurHasher32;
 
 	std::vector<uint32_t> memory;
@@ -197,11 +197,11 @@ TEST_SUITE("NodePool") {
 		pool.Iterate(root4, &iter);
 		CHECK(iter.exist);
 	}
-	TEST_CASE("Test LibForkEdit()") {
+	TEST_CASE("Test ThreadedEdit()") {
 		lf::busy_pool busy_pool(12);
 
 		MurmurNodePool pool(6);
-		auto root = pool.LibForkEdit(
+		auto root = pool.ThreadedEdit(
 		    &busy_pool, {},
 		    AABBEditor{.level = pool.GetConfig().GetLowestLevel(), .aabb_min = {}, .aabb_max{43, 21, 3}});
 		CHECK(root);
