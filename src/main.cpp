@@ -266,7 +266,8 @@ int main() {
 		ImGui::DragFloat("Speed", &camera->m_speed, 0.0001f, 0.0001f, 0.25f);
 		ImGui::Combo("Type", &render_type, "Diffuse\0Normal\0Iteration");
 		if (ImGui::Button("GC")) {
-			dag_node_pool->ThreadedGC(&busy_pool, dag_node_pool->GetRoot());
+			auto gc_ns = ns([&]() { dag_node_pool->ThreadedGC(&busy_pool, dag_node_pool->GetRoot()); });
+			printf("GC cost %lf ms\n", (double)gc_ns / 1000000.0);
 		}
 		ImGui::End();
 		ImGui::Render();
