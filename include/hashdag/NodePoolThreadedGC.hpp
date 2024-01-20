@@ -9,9 +9,7 @@
 #include "NodePool.hpp"
 
 #include <algorithm>
-#include <cuckoohash_map.hh>
-#include <libfork/schedule/busy_pool.hpp>
-#include <libfork/task.hpp>
+#include <atomic>
 #include <mutex>
 #include <set>
 #include <unordered_set>
@@ -21,14 +19,21 @@ namespace hashdag {
 
 template <typename Derived, std::unsigned_integral Word> class NodePoolThreadedGC {
 private:
-	using LevelBucketNodes = std::vector<std::unordered_map<Word, std::vector<Word>>>;
+	struct BucketNodes {
+		std::vector<Word> nodes;
+		inline Word GetBucket(const Config<Word> &config) {
+			return nodes.front() >> (config.page_bits_per_bucket + config.word_bits_per_page);
+		}
+	};
+	using LevelBucketNodes = std::vector<std::vector<BucketNodes>>;
 
 	inline const auto &get_node_pool() const {
 		return *static_cast<const NodePoolBase<Derived, Word> *>(static_cast<const Derived *>(this));
 	}
 	inline auto &get_node_pool() { return *static_cast<NodePoolBase<Derived, Word> *>(static_cast<Derived *>(this)); }
 
-	struct ParallelNodes {
+	// TODO: replace with some lock-free push_back DS
+	struct ParallelBucketNodes {
 		std::vector<Word> nodes;
 		std::mutex mutex;
 
@@ -38,102 +43,126 @@ private:
 		}
 	};
 
-	template <lf::context Context>
-	inline lf::basic_task<void, Context> lf_gc_tag_bucket_nodes(Word bucket_base, std::span<const Word> nodes,
-	                                                            ParallelNodes *parallel_bucket_nodes) const {
-		std::unordered_set<Word> local_node_set;
+	inline void gc_parallel_tag_bucket_nodes(Word bucket_base, std::span<const BucketNodes> bucket_nodes,
+	                                         std::span<ParallelBucketNodes> parallel_bucket_nodes,
+	                                         std::size_t concurrency, auto &&async_func) {
+		std::atomic_size_t counter = 0;
 
-		for (Word node : nodes) {
-			const Word *p_node = get_node_pool().read_node(node);
-			Word child_mask = *p_node;
-			const Word *p_next_child = p_node + 1;
+		std::vector<std::future<void>> futures(concurrency);
+		for (auto &f : futures) {
+			f = async_func([&]() {
+				std::unordered_set<Word> local_node_set;
 
-			for (; child_mask; child_mask &= (child_mask - 1)) {
-				Word child = *(p_next_child++);
-				if (local_node_set.count(child))
-					continue;
-				local_node_set.insert(child);
-				Word bucket = child / get_node_pool().m_config.GetWordsPerBucket();
-				parallel_bucket_nodes[bucket - bucket_base].Push(child);
-			}
+				for (;;) {
+					std::size_t index = counter.fetch_add(1, std::memory_order_relaxed);
+					if (index >= bucket_nodes.size())
+						break;
+
+					for (Word node : bucket_nodes[index].nodes) {
+						const Word *p_node = get_node_pool().read_node(node);
+						Word child_mask = *p_node;
+						const Word *p_next_child = p_node + 1;
+
+						for (; child_mask; child_mask &= (child_mask - 1)) {
+							Word child = *(p_next_child++);
+							if (local_node_set.count(child))
+								continue;
+							local_node_set.insert(child);
+							Word bucket = child / get_node_pool().m_config.GetWordsPerBucket();
+							parallel_bucket_nodes[bucket - bucket_base].Push(child);
+						}
+					}
+				}
+			});
 		}
-		co_return;
+		for (auto &f : futures)
+			f.wait();
 	}
 
-	template <lf::context Context>
-	inline lf::basic_task<void, Context> lf_gc_pop_bucket_nodes(std::vector<Word> src_nodes,
-	                                                            std::vector<Word> *p_dst_nodes) const {
-		std::sort(src_nodes.begin(), src_nodes.end());
-		src_nodes.erase(std::unique(src_nodes.begin(), src_nodes.end()), src_nodes.end());
-		*p_dst_nodes = std::move(src_nodes);
-		co_return;
+	inline std::vector<BucketNodes>
+	gc_reduce_parallel_bucket_nodes(std::span<ParallelBucketNodes> parallel_bucket_nodes, std::size_t concurrency,
+	                                auto &&async_func) {
+		std::atomic_size_t counter = 0, bn_counter = 0;
+		std::vector<BucketNodes> bucket_nodes(parallel_bucket_nodes.size());
+
+		std::vector<std::future<void>> futures(concurrency);
+		for (auto &f : futures) {
+			f = async_func([&]() {
+				for (;;) {
+					std::size_t index = counter.fetch_add(1, std::memory_order_relaxed);
+					if (index >= parallel_bucket_nodes.size())
+						break;
+
+					if (parallel_bucket_nodes[index].nodes.empty()) {
+						// TODO: Delete page
+					} else {
+						std::size_t bn_index = bn_counter.fetch_add(1, std::memory_order_relaxed);
+						auto &nodes = bucket_nodes[bn_index].nodes;
+						nodes = std::move(parallel_bucket_nodes[index].nodes);
+						std::sort(nodes.begin(), nodes.end());
+						nodes.erase(std::unique(nodes.begin(), nodes.end()), nodes.end());
+					}
+				}
+			});
+		}
+		for (auto &f : futures)
+			f.wait();
+
+		bucket_nodes.resize(bn_counter.load(std::memory_order_acquire));
+		bucket_nodes.shrink_to_fit();
+
+		return bucket_nodes;
 	}
 
-	template <lf::context Context>
-	inline lf::basic_task<LevelBucketNodes, Context> lf_gc_forward_pass(std::vector<Word> root_nodes) const {
+	inline LevelBucketNodes gc_forward_pass(std::vector<Word> root_nodes, std::size_t concurrency, auto &&async_func) {
 		LevelBucketNodes level_bucket_nodes(get_node_pool().m_config.GetNodeLevels());
 		{
 			std::sort(root_nodes.begin(), root_nodes.end());
 			for (Word root : root_nodes) {
 				Word bucket = root / get_node_pool().m_config.GetWordsPerBucket();
-				level_bucket_nodes[0][bucket].push_back(root);
+				if (level_bucket_nodes[0].empty() ||
+				    level_bucket_nodes[0].back().GetBucket(get_node_pool().m_config) != bucket)
+					level_bucket_nodes[0].push_back(BucketNodes{.nodes = {root}});
+				else
+					level_bucket_nodes[0].back().nodes.push_back(root);
 			}
 		}
 		{
-			std::unique_ptr<ParallelNodes[]> parallel_bucket_nodes;
+			// Initialize parallel bucket nodes (cache)
+			std::unique_ptr<ParallelBucketNodes[]> parallel_bucket_nodes;
 			{
 				Word max_level_buckets = 0;
 				for (Word level = 1; level < get_node_pool().m_config.GetNodeLevels(); ++level) {
 					Word buckets_at_level = get_node_pool().m_config.GetBucketsAtLevel(level);
 					max_level_buckets = std::max(max_level_buckets, buckets_at_level);
 				}
-				parallel_bucket_nodes = std::make_unique<ParallelNodes[]>(max_level_buckets);
+				parallel_bucket_nodes = std::make_unique<ParallelBucketNodes[]>(max_level_buckets);
 			}
 
 			for (Word level = 1; level < get_node_pool().m_config.GetNodeLevels(); ++level) {
 				const auto &prev_bucket_nodes = level_bucket_nodes[level - 1];
 				Word bucket_base = get_node_pool().m_bucket_level_bases[level];
-
-				for (auto it = prev_bucket_nodes.begin(); it != prev_bucket_nodes.end();) {
-					const auto &nodes = it->second;
-					if (++it == prev_bucket_nodes.end())
-						co_await lf_gc_tag_bucket_nodes<Context>(bucket_base, nodes, parallel_bucket_nodes.get());
-					else
-						co_await lf_gc_tag_bucket_nodes<Context>(bucket_base, nodes, parallel_bucket_nodes.get())
-						    .fork();
-				}
-				co_await lf::join();
-
-				auto &cur_bucket_nodes = level_bucket_nodes[level];
 				Word buckets_at_level = get_node_pool().m_config.GetBucketsAtLevel(level);
-				for (Word b = 0; b < buckets_at_level; ++b) {
-					if (parallel_bucket_nodes[b].nodes.empty())
-						continue;
+				std::span<ParallelBucketNodes> parallel_bucket_node_span = {parallel_bucket_nodes.get(),
+				                                                            buckets_at_level};
 
-					Word bucket_idx = bucket_base + b;
-					cur_bucket_nodes[bucket_idx] = std::move(parallel_bucket_nodes[b].nodes);
-				}
+				gc_parallel_tag_bucket_nodes(bucket_base, prev_bucket_nodes, parallel_bucket_node_span, concurrency,
+				                             async_func);
 
-				for (auto it = cur_bucket_nodes.begin(); it != cur_bucket_nodes.end();) {
-					auto src_nodes = std::move(it->second);
-					auto &dst_nodes = it->second;
+				level_bucket_nodes[level] =
+				    gc_reduce_parallel_bucket_nodes(parallel_bucket_node_span, concurrency, async_func);
 
-					if (++it == cur_bucket_nodes.end())
-						co_await lf_gc_pop_bucket_nodes<Context>(std::move(src_nodes), &dst_nodes);
-					else
-						co_await lf_gc_pop_bucket_nodes<Context>(std::move(src_nodes), &dst_nodes).fork();
-				}
-				co_await lf::join();
-
-				printf("%d %zu\n", level, cur_bucket_nodes.size());
+				printf("%d %zu\n", level, level_bucket_nodes[level].size());
 			}
 		}
-		co_return level_bucket_nodes;
+		return level_bucket_nodes;
 	}
 
-	template <lf::context Context>
-	inline lf::basic_task<void, Context> lf_gc_backward_pass(std::vector<Word> root_nodes) const {
-
+	inline void gc_backward_pass(LevelBucketNodes level_bucket_nodes, std::size_t concurrency,
+	                             auto &&async_func = std::async) const {
+		for (Word level = get_node_pool().m_config.GetNodeLevels() - 1; ~level; --level) {
+			Word buckets_at_level = get_node_pool().m_config.GetBucketsAtLevel(level);
+		}
 	}
 
 	inline std::vector<Word> gc_make_root_nodes(std::span<const NodePointer<Word>> root_ptrs) const {
@@ -153,20 +182,20 @@ private:
 public:
 	inline NodePoolThreadedGC() { static_assert(std::is_base_of_v<NodePoolBase<Derived, Word>, Derived>); }
 
-	inline NodePointer<Word> ThreadedGC(lf::busy_pool *p_lf_pool, NodePointer<Word> root_ptr) {
+	inline NodePointer<Word> ThreadedGC(NodePointer<Word> root_ptr, std::size_t concurrency, auto &&async_func) {
 		auto roots = gc_make_root_nodes({&root_ptr, 1});
 		if (roots.empty())
 			return {};
-		auto bucket_node_sets = p_lf_pool->schedule(lf_gc_forward_pass<lf::busy_pool::context>(std::move(roots)));
+		auto level_bucket_nodes = gc_forward_pass(std::move(roots), concurrency, async_func);
 		return {};
 	}
 
-	inline std::vector<NodePointer<Word>> ThreadedGC(lf::busy_pool *p_lf_pool,
-	                                                 std::span<const NodePointer<Word>> root_ptrs) {
+	inline std::vector<NodePointer<Word>> ThreadedGC(std::span<const NodePointer<Word>> root_ptrs,
+	                                                 std::size_t concurrency, auto &&async_func = std::async) {
 		auto roots = gc_make_root_nodes(root_ptrs);
 		if (roots.empty())
 			return {};
-		auto bucket_node_sets = p_lf_pool->schedule(lf_gc_forward_pass<lf::busy_pool::context>(std::move(roots)));
+		auto level_bucket_nodes = gc_forward_pass(std::move(roots), concurrency, async_func);
 		return {};
 	}
 };
