@@ -126,7 +126,7 @@ float edit_radius = 128.0f;
 int render_type = 0;
 
 int main() {
-	GLFWwindow *window = myvk::GLFWCreateWindow("Test", 640, 480, true);
+	GLFWwindow *window = myvk::GLFWCreateWindow("Test", 1280, 720, true);
 	glfwSetKeyCallback(window, key_callback);
 
 	myvk::Ptr<myvk::Device> device;
@@ -261,7 +261,7 @@ int main() {
 		myvk::ImGuiNewFrame();
 		ImGui::Begin("Test");
 		ImGui::Text("FPS %f", ImGui::GetIO().Framerate);
-		ImGui::DragFloat("Radius", &edit_radius, 1.0f, 1.0f, 2048.0f);
+		ImGui::DragFloat("Radius", &edit_radius, 1.0f, 0.0f, 2048.0f);
 		ImGui::DragFloat("Speed", &camera->m_speed, 0.0001f, 0.0001f, 0.25f);
 		ImGui::Combo("Type", &render_type, "Diffuse\0Normal\0Iteration");
 		ImGui::End();

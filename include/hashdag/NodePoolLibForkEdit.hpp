@@ -2,7 +2,7 @@
 // Created by adamyuan on 1/17/24.
 //
 
-// Threaded NodePool Edit and Iterate with libfork
+// Threaded NodePool Edit with libfork
 
 #pragma once
 #ifndef VKHASHDAG_NODEPOOLLIBFORKEDIT_HPP

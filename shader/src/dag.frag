@@ -39,7 +39,6 @@ layout(push_constant) uniform uuPushConstant {
 
 // STACK_SIZE equals to the fraction bits of float
 #define STACK_SIZE 23
-#define EPS 3.552713678800501e-15
 struct StackItem {
 	uint node;
 	float t_max;
@@ -234,11 +233,11 @@ bool DAG_RayMarch(in const uint root,
 	// Output results.
 	o_pos = clamp(o + t_min * d, pos, pos + scale_exp2);
 	if (norm.x != 0)
-		o_pos.x = norm.x > 0 ? pos.x + scale_exp2 + EPS * 2 : pos.x - EPS;
+		o_pos.x = norm.x > 0 ? pos.x + scale_exp2 + epsilon * 2 : pos.x - epsilon;
 	if (norm.y != 0)
-		o_pos.y = norm.y > 0 ? pos.y + scale_exp2 + EPS * 2 : pos.y - EPS;
+		o_pos.y = norm.y > 0 ? pos.y + scale_exp2 + epsilon * 2 : pos.y - epsilon;
 	if (norm.z != 0)
-		o_pos.z = norm.z > 0 ? pos.z + scale_exp2 + EPS * 2 : pos.z - EPS;
+		o_pos.z = norm.z > 0 ? pos.z + scale_exp2 + epsilon * 2 : pos.z - epsilon;
 	o_pos -= 1.0;
 	o_normal = norm;
 	o_iter = iter;
