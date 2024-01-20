@@ -47,7 +47,7 @@ public:
 #endif
 
 	template <typename, std::unsigned_integral> friend class NodePoolThreadedEdit;
-	template <typename, std::unsigned_integral> friend class NodePoolLibForkGC;
+	template <typename, std::unsigned_integral> friend class NodePoolThreadedGC;
 	template <typename, std::unsigned_integral> friend class NodePoolTraversal;
 
 	Config<Word> m_config;

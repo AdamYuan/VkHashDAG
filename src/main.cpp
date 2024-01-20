@@ -265,6 +265,9 @@ int main() {
 		ImGui::DragFloat("Radius", &edit_radius, 1.0f, 0.0f, 2048.0f);
 		ImGui::DragFloat("Speed", &camera->m_speed, 0.0001f, 0.0001f, 0.25f);
 		ImGui::Combo("Type", &render_type, "Diffuse\0Normal\0Iteration");
+		if (ImGui::Button("GC")) {
+			dag_node_pool->ThreadedGC(&busy_pool, dag_node_pool->GetRoot());
+		}
 		ImGui::End();
 		ImGui::Render();
 

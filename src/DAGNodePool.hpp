@@ -12,6 +12,7 @@
 
 #include <hashdag/NodePool.hpp>
 #include <hashdag/NodePoolThreadedEdit.hpp>
+#include <hashdag/NodePoolThreadedGC.hpp>
 #include <hashdag/NodePoolTraversal.hpp>
 
 #include <myvk/Buffer.hpp>
@@ -21,6 +22,7 @@
 
 class DAGNodePool final : public hashdag::NodePoolBase<DAGNodePool, uint32_t>,
                           public hashdag::NodePoolThreadedEdit<DAGNodePool, uint32_t>,
+                          public hashdag::NodePoolThreadedGC<DAGNodePool, uint32_t>,
                           public hashdag::NodePoolTraversal<DAGNodePool, uint32_t> {
 public:
 	using WordSpanHasher = hashdag::MurmurHasher32;
