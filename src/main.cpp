@@ -177,20 +177,6 @@ int main() {
 		                                                       .aabb_max = {10000, 10000, 10000},
 		                                                   },
 		                                                   10));
-		/* dag_node_pool->SetRoot(dag_node_pool->ThreadedEdit(&busy_pool, dag_node_pool->GetRoot(),
-		                                                   SphereEditor<false>{
-		                                                       .level = dag_node_pool->GetConfig().GetLowestLevel(),
-		                                                       .center = {5005, 5000, 5000},
-		                                                       .r2 = 2000 * 2000,
-		                                                   },
-		                                                   10));
-		dag_node_pool->SetRoot(dag_node_pool->ThreadedEdit(&busy_pool, dag_node_pool->GetRoot(),
-		                                                   SphereEditor<false>{
-		                                                       .level = dag_node_pool->GetConfig().GetLowestLevel(),
-		                                                       .center = {10000, 10000, 10000},
-		                                                       .r2 = 4000 * 4000,
-		                                                   },
-		                                                   10)); */
 	});
 	printf("edit cost %lf ms\n", (double)edit_ns / 1000000.0);
 	auto flush_ns = ns([&]() {
