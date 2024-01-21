@@ -24,6 +24,7 @@ template <std::unsigned_integral Word> struct Config {
 	inline Word GetWordsPerPage() const { return Word(1u) << word_bits_per_page; }
 	inline Word GetPagesPerBucket() const { return Word(1u) << page_bits_per_bucket; }
 	inline Word GetWordsPerBucket() const { return Word(1u) << (word_bits_per_page + page_bits_per_bucket); }
+	inline Word GetWordBitsPerBucket() const { return word_bits_per_page + page_bits_per_bucket; }
 	inline Word GetBucketsAtLevel(Word level) const { return Word(1u) << bucket_bits_each_level[level]; }
 	inline Word GetNodeLevels() const { return bucket_bits_each_level.size(); }
 	inline Word GetLowestLevel() const { return GetNodeLevels() + 1u; }

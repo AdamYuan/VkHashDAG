@@ -35,8 +35,6 @@ concept NodePool = Hasher<typename T::WordSpanHasher, Word> && requires(T e, con
 template <typename T, typename Word>
 concept ThreadSafeEditNodePool = NodePool<T, Word> && requires(T e, const T ce) {
 	{ e.GetBucketEditMutex(Word{} /* Bucket Index */) } -> std::convertible_to<EditMutex &>;
-	{ ce.GetBucketWordsAtomic(Word{} /* Bucket Index */) } -> std::convertible_to<Word>;
-	e.SetBucketWordsAtomic(Word{} /* Bucket Index */, Word{} /* Words */);
 };
 
 template <typename Derived, std::unsigned_integral Word> class NodePoolBase {
@@ -61,23 +59,15 @@ public:
 	inline void write_page(Word page_id, Word page_offset, std::span<const Word> word_span) {
 		static_cast<Derived *>(this)->WritePage(page_id, page_offset, word_span);
 	}
-	inline EditMutex &get_bucket_edit_mutex(Word bucket_id) {
+	inline EditMutex &get_bucket_mutex(Word bucket_id) {
 		static_assert(ThreadSafeEditNodePool<Derived, Word>);
 		return static_cast<Derived *>(this)->GetBucketEditMutex(bucket_id);
 	}
-	template <bool ThreadSafe> inline Word get_bucket_words(Word bucket_id) const {
-		if constexpr (ThreadSafe) {
-			static_assert(ThreadSafeEditNodePool<Derived, Word>);
-			return static_cast<const Derived *>(this)->GetBucketWordsAtomic(bucket_id);
-		} else
-			return static_cast<const Derived *>(this)->GetBucketWords(bucket_id);
+	inline Word get_bucket_words(Word bucket_id) const {
+		return static_cast<const Derived *>(this)->GetBucketWords(bucket_id);
 	}
-	template <bool ThreadSafe> inline void set_bucket_words(Word bucket_id, Word words) {
-		if constexpr (ThreadSafe) {
-			static_assert(ThreadSafeEditNodePool<Derived, Word>);
-			static_cast<Derived *>(this)->SetBucketWordsAtomic(bucket_id, words);
-		} else
-			static_cast<Derived *>(this)->SetBucketWords(bucket_id, words);
+	inline void set_bucket_words(Word bucket_id, Word words) {
+		static_cast<Derived *>(this)->SetBucketWords(bucket_id, words);
 	}
 
 	inline const Word *read_node(Word node) const {
@@ -172,7 +162,7 @@ public:
 		                                                         (m_config.GetBucketsAtLevel(level) - 1));
 
 		if constexpr (ThreadSafe) {
-			Word shared_bucket_words = get_bucket_words<true>(bucket_index);
+			Word shared_bucket_words = get_bucket_words(bucket_index);
 			{
 				NodePointer<Word> find_node_ptr =
 				    find_node(get_node_words, bucket_index, shared_bucket_words, 0, node_span);
@@ -181,9 +171,9 @@ public:
 			}
 
 			{
-				std::unique_lock<EditMutex> unique_lock{get_bucket_edit_mutex(bucket_index)};
+				std::unique_lock<EditMutex> unique_lock{get_bucket_mutex(bucket_index)};
 
-				Word unique_bucket_words = get_bucket_words<true>(bucket_index);
+				Word unique_bucket_words = get_bucket_words(bucket_index);
 				NodePointer<Word> find_node_ptr =
 				    find_node(get_node_words, bucket_index, unique_bucket_words, shared_bucket_words, node_span);
 				if (find_node_ptr)
@@ -191,44 +181,44 @@ public:
 
 				auto [append_node_ptr, new_bucket_words] = append_node(bucket_index, unique_bucket_words, node_span);
 				if (append_node_ptr) {
-					set_bucket_words<true>(bucket_index, new_bucket_words);
+					set_bucket_words(bucket_index, new_bucket_words);
 					return append_node_ptr;
 				}
 				return fallback_ptr;
 			}
 		} else {
-			const Word bucket_words = get_bucket_words<false>(bucket_index);
+			const Word bucket_words = get_bucket_words(bucket_index);
 			NodePointer<Word> find_node_ptr = find_node(get_node_words, bucket_index, bucket_words, 0, node_span);
 			if (find_node_ptr)
 				return find_node_ptr;
 
 			auto [append_node_ptr, new_bucket_words] = append_node(bucket_index, bucket_words, node_span);
 			if (append_node_ptr) {
-				set_bucket_words<false>(bucket_index, new_bucket_words);
+				set_bucket_words(bucket_index, new_bucket_words);
 				return append_node_ptr;
 			}
 			return fallback_ptr;
 		}
 	}
 
+	inline static Word get_inner_node_words(const Word *p_packed_node) {
+		static constexpr uint8_t kPopCount8_Plus1_Zero[] = {
+		    0, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5, 2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
+		    2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6, 3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
+		    2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6, 3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
+		    3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7, 4, 5, 5, 6, 5, 6, 6, 7, 5, 6, 6, 7, 6, 7, 7, 8,
+		    2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6, 3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
+		    3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7, 4, 5, 5, 6, 5, 6, 6, 7, 5, 6, 6, 7, 6, 7, 7, 8,
+		    3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7, 4, 5, 5, 6, 5, 6, 6, 7, 5, 6, 6, 7, 6, 7, 7, 8,
+		    4, 5, 5, 6, 5, 6, 6, 7, 5, 6, 6, 7, 6, 7, 7, 8, 5, 6, 6, 7, 6, 7, 7, 8, 6, 7, 7, 8, 7, 8, 8, 9,
+		};
+		return kPopCount8_Plus1_Zero[uint8_t(*p_packed_node)];
+	}
+
 	template <bool ThreadSafe>
 	inline NodePointer<Word> upsert_inner_node(Word level, std::span<const Word> node_span,
 	                                           NodePointer<Word> fallback_ptr) {
-		const auto get_node_words = [](const Word *p_packed_node) {
-			// Zero for empty node so that find_node can break
-			static constexpr uint8_t kPopCount8_Plus1_Zero[] = {
-			    0, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5, 2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
-			    2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6, 3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
-			    2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6, 3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
-			    3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7, 4, 5, 5, 6, 5, 6, 6, 7, 5, 6, 6, 7, 6, 7, 7, 8,
-			    2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6, 3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
-			    3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7, 4, 5, 5, 6, 5, 6, 6, 7, 5, 6, 6, 7, 6, 7, 7, 8,
-			    3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7, 4, 5, 5, 6, 5, 6, 6, 7, 5, 6, 6, 7, 6, 7, 7, 8,
-			    4, 5, 5, 6, 5, 6, 6, 7, 5, 6, 6, 7, 6, 7, 7, 8, 5, 6, 6, 7, 6, 7, 7, 8, 6, 7, 7, 8, 7, 8, 8, 9,
-			};
-			return kPopCount8_Plus1_Zero[uint8_t(*p_packed_node)];
-		};
-		return upsert_node<ThreadSafe>(get_node_words, level, node_span, fallback_ptr);
+		return upsert_node<ThreadSafe>(get_inner_node_words, level, node_span, fallback_ptr);
 	}
 	template <bool ThreadSafe>
 	inline NodePointer<Word> upsert_leaf(Word level, std::span<const Word, Config<Word>::kWordsPerLeaf> leaf_span,

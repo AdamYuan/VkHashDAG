@@ -50,13 +50,7 @@ private:
 	inline uint32_t GetBucketWords(uint32_t bucket_id) const {
 		return m_bucket_words[bucket_id].load(std::memory_order_acquire);
 	}
-	inline uint32_t GetBucketWordsAtomic(uint32_t bucket_id) const {
-		return m_bucket_words[bucket_id].load(std::memory_order_acquire);
-	}
 	inline void SetBucketWords(uint32_t bucket_id, uint32_t words) {
-		m_bucket_words[bucket_id].store(words, std::memory_order_release);
-	}
-	inline void SetBucketWordsAtomic(uint32_t bucket_id, uint32_t words) {
 		m_bucket_words[bucket_id].store(words, std::memory_order_release);
 	}
 	inline const uint32_t *ReadPage(uint32_t page_id) const { return m_pages[page_id].get(); }

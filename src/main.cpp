@@ -280,8 +280,15 @@ int main() {
 		ImGui::DragFloat("Speed", &camera->m_speed, 0.0001f, 0.0001f, 0.25f);
 		ImGui::Combo("Type", &render_type, "Diffuse\0Normal\0Iteration");
 		if (ImGui::Button("GC")) {
-			auto gc_ns = ns([&]() { dag_node_pool->ThreadedGC(&busy_pool, dag_node_pool->GetRoot()); });
+			auto gc_ns =
+			    ns([&]() { dag_node_pool->SetRoot(dag_node_pool->ThreadedGC(&busy_pool, dag_node_pool->GetRoot())); });
 			printf("GC cost %lf ms\n", (double)gc_ns / 1000000.0);
+			auto flush_ns = ns([&]() {
+				auto fence = myvk::Fence::Create(device);
+				if (dag_node_pool->Flush({}, {}, fence))
+					fence->Wait();
+			});
+			printf("flush cost %lf ms\n", (double)flush_ns / 1000000.0);
 		}
 		ImGui::End();
 		ImGui::Render();
