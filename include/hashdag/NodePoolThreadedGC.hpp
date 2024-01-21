@@ -334,8 +334,6 @@ private:
 		// Preserve root for filled nodes
 		if (!get_node_pool().m_filled_node_pointers.empty() && get_node_pool().m_filled_node_pointers.front())
 			roots.push_back(*get_node_pool().m_filled_node_pointers.front());
-		// Clear filled nodes since they should be reset after GC
-		get_node_pool().m_filled_node_pointers.clear();
 
 		// Push Non-Null roots
 		for (NodePointer<Word> root_ptr : root_ptrs)
@@ -363,6 +361,11 @@ private:
 		for (auto &root_ptr : root_ptrs)
 			if (root_ptr)
 				root_ptr = NodePointer<Word>(node_tables[*root_ptr >> config.GetWordBitsPerBucket()].at(*root_ptr));
+		// Re-initialize filled node pointers if altered
+		if (!get_node_pool().m_filled_node_pointers.empty()) {
+			get_node_pool().m_filled_node_pointers.clear();
+			get_node_pool().make_filled_node_pointers();
+		}
 	}
 
 public:
