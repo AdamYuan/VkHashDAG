@@ -11,17 +11,16 @@
 #include <algorithm>
 #include <libfork/schedule/busy_pool.hpp>
 #include <libfork/task.hpp>
-#include <mutex>
-#include <set>
-#include <unordered_set>
 #include <vector>
 
 namespace hashdag {
 
-template <typename Derived, std::unsigned_integral Word> class NodePoolThreadedGC {
+template <typename Derived, std::unsigned_integral Word, //
+          template <typename, typename> typename HashMap, template <typename> typename HashSet>
+class NodePoolThreadedGC {
 private:
-	using BucketMap = std::unordered_map<Word, std::vector<Word>>;
-	using LevelBucketMaps = std::vector<BucketMap>;
+	using BucketMap = HashMap<Word, std::vector<Word>>;
+	using NodeTable = HashMap<Word, Word>;
 
 	inline const auto &get_node_pool() const {
 		return *static_cast<const NodePoolBase<Derived, Word> *>(static_cast<const Derived *>(this));
@@ -31,7 +30,7 @@ private:
 	template <lf::context Context>
 	inline lf::basic_task<void, Context> lf_gc_tag_bucket(Word level_bucket_base, std::span<const Word> nodes,
 	                                                      std::vector<Word> *bucket_caches) {
-		std::unordered_set<Word> local_node_set;
+		HashSet<Word> local_node_set;
 
 		for (Word node : nodes) {
 			const Word *p_node = get_node_pool().read_node(node);
@@ -61,9 +60,9 @@ private:
 	}
 
 	template <lf::context Context>
-	inline lf::basic_task<LevelBucketMaps, Context> lf_gc_forward_pass(std::vector<Word> root_nodes,
-	                                                                   std::vector<Word> *bucket_caches) {
-		LevelBucketMaps level_bucket_maps(get_node_pool().m_config.GetNodeLevels());
+	inline lf::basic_task<std::vector<BucketMap>, Context> lf_gc_forward_pass(std::vector<Word> root_nodes,
+	                                                                          std::vector<Word> *bucket_caches) {
+		std::vector<BucketMap> level_bucket_maps(get_node_pool().m_config.GetNodeLevels());
 
 		// Push root level
 		for (Word root : root_nodes) {
@@ -109,9 +108,9 @@ private:
 
 	template <lf::context Context>
 	inline lf::basic_task<void, Context>
-	lf_gc_shrink_inner_bucket(Word level, Word level_bucket_base, std::span<const Word> nodes,
-	                          std::unordered_map<Word, Word> *p_node_table, std::vector<Word> *bucket_caches,
-	                          Word child_level_bucket_base, const std::unordered_map<Word, Word> *child_node_tables) {
+	lf_gc_shrink_inner_bucket(Word level, Word level_bucket_base, std::span<const Word> nodes, NodeTable *p_node_table,
+	                          std::vector<Word> *bucket_caches, Word child_level_bucket_base,
+	                          const NodeTable *child_node_tables) {
 		if (nodes.empty())
 			co_return;
 
@@ -200,7 +199,7 @@ private:
 
 	template <lf::context Context>
 	inline lf::basic_task<void, Context> lf_gc_shrink_leaf_bucket(Word bucket_index, std::span<const Word> nodes,
-	                                                              std::unordered_map<Word, Word> *p_node_table) {
+	                                                              NodeTable *p_node_table) {
 		const Config<Word> &config = get_node_pool().m_config;
 		// Leaf's hash won't change, so the bucket index remains
 		Word prev_bucket_words = get_node_pool().get_bucket_words(bucket_index);
@@ -236,11 +235,11 @@ private:
 	}
 
 	template <lf::context Context>
-	inline lf::basic_task<std::vector<std::unordered_map<Word, Word>>, Context>
-	lf_gc_backward_pass(LevelBucketMaps level_bucket_maps, std::vector<Word> *bucket_caches) {
+	inline lf::basic_task<std::vector<NodeTable>, Context> lf_gc_backward_pass(std::vector<BucketMap> level_bucket_maps,
+	                                                                           std::vector<Word> *bucket_caches) {
 		const Config<Word> &config = get_node_pool().m_config;
 
-		std::vector<std::unordered_map<Word, Word>> bucket_node_tables[2]; // Ping-pong Node Maps
+		std::vector<NodeTable> bucket_node_tables[2]; // Ping-pong Node Tables
 		{
 			Word max_level_buckets = get_max_level_buckets();
 			bucket_node_tables[0].resize(max_level_buckets);
@@ -248,7 +247,7 @@ private:
 		}
 
 		for (Word level = config.GetNodeLevels() - 1; ~level; --level) {
-			std::vector<std::unordered_map<Word, Word>> &cur_node_tables = bucket_node_tables[level & 1u];
+			std::vector<NodeTable> &cur_node_tables = bucket_node_tables[level & 1u];
 			BucketMap &bucket_map = level_bucket_maps[level];
 
 			Word buckets_at_level = get_node_pool().m_config.GetBucketsAtLevel(level);
@@ -347,8 +346,10 @@ private:
 		auto node_tables = p_lf_pool->schedule(
 		    lf_gc_backward_pass<lf::busy_pool::context>(std::move(bucket_node_sets), bucket_caches.data()));
 		for (auto &root_ptr : root_ptrs)
-			if (root_ptr)
+			if (root_ptr) {
+				printf("%d -> %d\n", *root_ptr, node_tables[*root_ptr >> config.GetWordBitsPerBucket()].at(*root_ptr));
 				root_ptr = NodePointer<Word>(node_tables[*root_ptr >> config.GetWordBitsPerBucket()].at(*root_ptr));
+			}
 	}
 
 public:

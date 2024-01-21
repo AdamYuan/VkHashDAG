@@ -44,9 +44,10 @@ private:
 public:
 #endif
 
-	template <typename, std::unsigned_integral> friend class NodePoolThreadedEdit;
-	template <typename, std::unsigned_integral> friend class NodePoolThreadedGC;
 	template <typename, std::unsigned_integral> friend class NodePoolTraversal;
+	template <typename, std::unsigned_integral> friend class NodePoolThreadedEdit;
+	template <typename, std::unsigned_integral, template <typename, typename> typename, template <typename> typename>
+	friend class NodePoolThreadedGC;
 
 	Config<Word> m_config;
 	std::vector<Word> m_bucket_level_bases;

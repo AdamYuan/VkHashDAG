@@ -87,12 +87,10 @@ template <typename Func> inline long ns(Func &&func) {
 
 bool DAGNodePool::Flush(const myvk::SemaphoreGroup &wait_semaphores, const myvk::SemaphoreGroup &signal_semaphores,
                         const myvk::Ptr<myvk::Fence> &fence) {
-	auto page_write_ranges = m_page_write_ranges.lock_table();
-
 	std::set<uint32_t> missing_gpu_pages;
 
 	// auto scan0_ns = ns([&]() {
-	for (const auto &it : page_write_ranges) {
+	for (const auto &it : m_page_write_ranges) {
 		uint32_t page_id = it.first, gpu_page_id = page_id >> m_page_bits_per_gpu_page;
 		if (m_gpu_pages[gpu_page_id].allocation == VK_NULL_HANDLE)
 			missing_gpu_pages.insert(gpu_page_id);
@@ -153,7 +151,7 @@ bool DAGNodePool::Flush(const myvk::SemaphoreGroup &wait_semaphores, const myvk:
 	}
 
 	// auto scan1_ns = ns([&]() {
-	for (const auto &it : page_write_ranges) {
+	for (const auto &it : m_page_write_ranges) {
 		uint32_t page_id = it.first, gpu_page_id = page_id >> m_page_bits_per_gpu_page;
 		const Range &range = it.second;
 		const auto &gpu_page = m_gpu_pages[gpu_page_id];
@@ -165,7 +163,7 @@ bool DAGNodePool::Flush(const myvk::SemaphoreGroup &wait_semaphores, const myvk:
 	/* });
 	printf("scan1 %lf ms\n", (double)scan1_ns / 1000000.0); */
 
-	page_write_ranges.clear();
+	m_page_write_ranges.clear();
 
 	return !missing_gpu_pages.empty();
 }

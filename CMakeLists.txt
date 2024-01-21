@@ -31,7 +31,6 @@ endif ()
 add_subdirectory(dep/MyVK)
 add_subdirectory(dep/glm)
 add_subdirectory(dep/libfork)
-add_subdirectory(dep/libcuckoo)
 add_subdirectory(dep/parallel-hashmap)
 add_subdirectory(dep/thread-pool)
 
@@ -47,7 +46,6 @@ add_executable(VkHashDAG
 target_include_directories(VkHashDAG PRIVATE include)
 target_link_libraries(VkHashDAG PRIVATE
         myvk::vulkan myvk::glfw myvk::imgui
-        libcuckoo::libcuckoo
         libfork::libfork
         glm::glm
         BS::thread_pool

@@ -7,8 +7,8 @@
 #define VKHASHDAG_VKNODEPOOL_HPP
 
 #include <atomic>
-#include <cuckoohash_map.hh>
 #include <memory>
+#include <parallel_hashmap/phmap.h>
 
 #include <hashdag/NodePool.hpp>
 #include <hashdag/NodePoolThreadedEdit.hpp>
@@ -20,10 +20,11 @@
 #include <myvk/Fence.hpp>
 #include <myvk/Semaphore.hpp>
 
-class DAGNodePool final : public hashdag::NodePoolBase<DAGNodePool, uint32_t>,
-                          public hashdag::NodePoolThreadedEdit<DAGNodePool, uint32_t>,
-                          public hashdag::NodePoolThreadedGC<DAGNodePool, uint32_t>,
-                          public hashdag::NodePoolTraversal<DAGNodePool, uint32_t> {
+class DAGNodePool final
+    : public hashdag::NodePoolBase<DAGNodePool, uint32_t>,
+      public hashdag::NodePoolTraversal<DAGNodePool, uint32_t>,
+      public hashdag::NodePoolThreadedEdit<DAGNodePool, uint32_t>,
+      public hashdag::NodePoolThreadedGC<DAGNodePool, uint32_t, phmap::flat_hash_map, phmap::flat_hash_set> {
 public:
 	using WordSpanHasher = hashdag::MurmurHasher32;
 
@@ -39,7 +40,9 @@ private:
 	std::unique_ptr<std::atomic_uint32_t[]> m_bucket_words;
 	std::unique_ptr<std::unique_ptr<uint32_t[]>[]> m_pages;
 	std::array<hashdag::EditMutex, 1024> m_edit_mutexes{};
-	libcuckoo::cuckoohash_map<uint32_t, Range> m_page_write_ranges;
+	phmap::parallel_flat_hash_map<uint32_t, Range, std::hash<uint32_t>, std::equal_to<>,
+	                              std::allocator<std::pair<uint32_t, Range>>, 10, std::mutex>
+	    m_page_write_ranges;
 
 	// Functions for hashdag::NodePoolBase
 	friend class hashdag::NodePoolBase<DAGNodePool, uint32_t>;
@@ -71,9 +74,9 @@ private:
 		    std::copy(m_pages[page_id].get() + range.begin, m_pages[page_id].get() + range.end,
 		              gpu_page.p_mapped_data + gpu_page_offset);
 		} else */
-		m_page_write_ranges.upsert(page_id, [&](Range &r, libcuckoo::UpsertContext) {
-			r.Union({page_offset, page_offset + (uint32_t)word_span.size()});
-		});
+		Range range = {page_offset, page_offset + (uint32_t)word_span.size()};
+		m_page_write_ranges.lazy_emplace_l(
+		    page_id, [&](auto &it) { it.second.Union(range); }, [&](const auto &ctor) { ctor(page_id, range); });
 	}
 
 	// Root
