@@ -109,8 +109,7 @@ private:
 				for (Word b = 0; b < buckets_at_level; ++b) {
 					if (parallel_bucket_infos[b].nodes.empty())
 						continue;
-					Word bucket_idx = level_bucket_base + b;
-					cur_bucket_infos[bucket_idx] = std::move(parallel_bucket_infos[b].nodes);
+					cur_bucket_infos[level_bucket_base + b] = std::move(parallel_bucket_infos[b].nodes);
 					parallel_bucket_infos[b].nodes.clear();
 				}
 
@@ -131,12 +130,21 @@ private:
 
 	template <lf::context Context>
 	inline lf::basic_task<void, Context>
-	lf_gc_reorder_bucket(Word bucket, std::span<const Word> nodes, ConcurrentNodeMap *p_node_map,
-	                     const ConcurrentNodeMap::locked_table *p_prev_node_map) const {
+	lf_gc_shrink_inner_bucket(Word bucket, std::span<const Word> nodes, ConcurrentNodeMap *p_node_map,
+	                          const ConcurrentNodeMap::locked_table *p_child_node_map) const {
 		if (nodes.empty()) {
-			// TODO: Delete all pages
+			// TODO: Delete all pages in the bucket
 			co_return;
 		}
+	}
+	template <lf::context Context>
+	inline lf::basic_task<void, Context> lf_gc_shrink_leaf_bucket(Word bucket, std::span<const Word> nodes,
+	                                                              ConcurrentNodeMap *p_node_map) const {
+		if (nodes.empty()) {
+			// TODO: Delete all pages in the bucket
+			co_return;
+		}
+
 	}
 
 	template <lf::context Context>
