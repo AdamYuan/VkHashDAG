@@ -7,7 +7,6 @@
 #define VKHASHDAG_HASHDAG_NODEPOOL_HPP
 
 #include "Config.hpp"
-#include "EditMutex.hpp"
 #include "Editor.hpp"
 #include "Hasher.hpp"
 #include "Iterator.hpp"
@@ -33,9 +32,13 @@ concept NodePool = Hasher<typename T::WordSpanHasher, Word> && requires(T e, con
 };
 
 template <typename T, typename Word>
-concept ThreadSafeEditNodePool = NodePool<T, Word> && requires(T e, const T ce) {
-	{ e.GetBucketEditMutex(Word{} /* Bucket Index */) } -> std::convertible_to<EditMutex &>;
+concept ThreadedNodePool = NodePool<T, Word> && requires(T e, const T ce) {
+	e.GetBucketMutex(Word{} /* Bucket Index */).lock();
+	e.GetBucketMutex(Word{} /* Bucket Index */).unlock();
 };
+
+template <typename T, typename Word>
+concept GCNodePool = NodePool<T, Word> && requires(T e) { e.DeletePage(Word{} /* Page Index */); };
 
 template <typename Derived, std::unsigned_integral Word> class NodePoolBase {
 #ifndef HASHDAG_TEST
@@ -60,9 +63,13 @@ public:
 	inline void write_page(Word page_id, Word page_offset, std::span<const Word> word_span) {
 		static_cast<Derived *>(this)->WritePage(page_id, page_offset, word_span);
 	}
-	inline EditMutex &get_bucket_mutex(Word bucket_id) {
-		static_assert(ThreadSafeEditNodePool<Derived, Word>);
-		return static_cast<Derived *>(this)->GetBucketEditMutex(bucket_id);
+	inline void delete_page(Word page_id) {
+		static_assert(GCNodePool<Derived, Word>);
+		static_cast<Derived *>(this)->DeletePage(page_id);
+	}
+	inline auto &get_bucket_mutex(Word bucket_id) {
+		static_assert(ThreadedNodePool<Derived, Word>);
+		return static_cast<Derived *>(this)->GetBucketMutex(bucket_id);
 	}
 	inline Word get_bucket_words(Word bucket_id) const {
 		return static_cast<const Derived *>(this)->GetBucketWords(bucket_id);
@@ -172,7 +179,7 @@ public:
 			}
 
 			{
-				std::unique_lock<EditMutex> unique_lock{get_bucket_mutex(bucket_index)};
+				std::unique_lock unique_lock{get_bucket_mutex(bucket_index)};
 
 				Word unique_bucket_words = get_bucket_words(bucket_index);
 				NodePointer<Word> find_node_ptr =

@@ -165,5 +165,8 @@ bool DAGNodePool::Flush(const myvk::SemaphoreGroup &wait_semaphores, const myvk:
 
 	m_page_write_ranges.clear();
 
+	printf("%zu pages deleted\n", m_page_deletes.size());
+	m_page_deletes.clear();
+
 	return !missing_gpu_pages.empty();
 }

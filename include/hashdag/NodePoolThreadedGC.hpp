@@ -101,7 +101,7 @@ private:
 			}
 			co_await lf::join();
 
-			printf("%d %zu\n", level, cur_bucket_map.size());
+			// printf("%d %zu\n", level, cur_bucket_map.size());
 		}
 		co_return level_bucket_maps;
 	}
@@ -176,6 +176,21 @@ private:
 
 		co_return;
 	}
+
+	inline void gc_bucket_delete_pages(Word bucket_index, Word bucket_words, Word prev_bucket_words) {
+		const Config<Word> &config = get_node_pool().m_config;
+
+		const auto get_upper_page_slot = [&config](Word words) {
+			return (words >> config.word_bits_per_page) + (words & (config.GetWordsPerPage() - 1)) ? 1u : 0u;
+		};
+
+		Word base_page_index = bucket_index << config.page_bits_per_bucket;
+		Word prev_page_slot = get_upper_page_slot(prev_bucket_words);
+
+		for (Word page_slot = get_upper_page_slot(bucket_words); page_slot < prev_page_slot; ++page_slot)
+			get_node_pool().delete_page(base_page_index | page_slot);
+	}
+
 	template <lf::context Context>
 	inline lf::basic_task<void, Context> lf_gc_flush_inner_bucket(Word bucket_index, std::vector<Word> bucket_cache) {
 		const Config<Word> &config = get_node_pool().m_config;
@@ -191,8 +206,9 @@ private:
 			get_node_pool().write_page(
 			    page_index, 0, std::span<const Word>{bucket_cache.begin() + bucket_cache_offset, bucket_cache.end()});
 
+		Word prev_bucket_words = get_node_pool().get_bucket_words(bucket_index);
 		get_node_pool().set_bucket_words(bucket_index, bucket_cache.size());
-		// TODO: Delete Pages
+		gc_bucket_delete_pages(bucket_index, bucket_cache.size(), prev_bucket_words);
 
 		co_return;
 	}
@@ -228,9 +244,8 @@ private:
 		}
 
 		get_node_pool().set_bucket_words(bucket_index, new_bucket_words);
+		gc_bucket_delete_pages(bucket_index, new_bucket_words, prev_bucket_words);
 
-		// TODO: Remove pages between [new_bucket_words, prev_bucket_words)
-		// printf("%d\n", prev_bucket_words - new_bucket_words);
 		co_return;
 	}
 
@@ -346,10 +361,8 @@ private:
 		auto node_tables = p_lf_pool->schedule(
 		    lf_gc_backward_pass<lf::busy_pool::context>(std::move(bucket_node_sets), bucket_caches.data()));
 		for (auto &root_ptr : root_ptrs)
-			if (root_ptr) {
-				printf("%d -> %d\n", *root_ptr, node_tables[*root_ptr >> config.GetWordBitsPerBucket()].at(*root_ptr));
+			if (root_ptr)
 				root_ptr = NodePointer<Word>(node_tables[*root_ptr >> config.GetWordBitsPerBucket()].at(*root_ptr));
-			}
 	}
 
 public:

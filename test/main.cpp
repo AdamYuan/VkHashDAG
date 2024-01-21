@@ -88,7 +88,7 @@ struct MurmurNodePool final : public hashdag::NodePoolBase<MurmurNodePool, uint3
 	std::unordered_map<uint32_t, uint32_t> bucket_words;
 	std::unordered_set<uint32_t> pages;
 
-	hashdag::EditMutex m_edit_mutex{};
+	hashdag::Mutex m_edit_mutex{};
 
 	inline ~MurmurNodePool() final = default;
 	inline explicit MurmurNodePool(uint32_t level_count)
@@ -96,7 +96,7 @@ struct MurmurNodePool final : public hashdag::NodePoolBase<MurmurNodePool, uint3
 		memory.resize(GetConfig().GetTotalWords());
 	}
 
-	inline hashdag::EditMutex &GetBucketEditMutex(uint32_t bucket_id) { return m_edit_mutex; }
+	inline hashdag::Mutex &GetBucketEditMutex(uint32_t bucket_id) { return m_edit_mutex; }
 	inline uint32_t GetBucketWords(uint32_t bucket_id) const {
 		auto it = bucket_words.find(bucket_id);
 		return it == bucket_words.end() ? 0 : it->second;

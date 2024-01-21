@@ -39,17 +39,18 @@ private:
 
 	std::unique_ptr<std::atomic_uint32_t[]> m_bucket_words;
 	std::unique_ptr<std::unique_ptr<uint32_t[]>[]> m_pages;
-	std::array<hashdag::EditMutex, 1024> m_edit_mutexes{};
+	std::array<std::mutex, 1024> m_edit_mutexes{};
 	phmap::parallel_flat_hash_map<uint32_t, Range, std::hash<uint32_t>, std::equal_to<>,
-	                              std::allocator<std::pair<uint32_t, Range>>, 10, std::mutex>
+	                              std::allocator<std::pair<uint32_t, Range>>, 6, std::mutex>
 	    m_page_write_ranges;
+	phmap::parallel_flat_hash_set<uint32_t, std::hash<uint32_t>, std::equal_to<>, std::allocator<uint32_t>, 6,
+	                              std::mutex>
+	    m_page_deletes;
 
 	// Functions for hashdag::NodePoolBase
 	friend class hashdag::NodePoolBase<DAGNodePool, uint32_t>;
 
-	inline hashdag::EditMutex &GetBucketEditMutex(uint32_t bucket_id) {
-		return m_edit_mutexes[bucket_id % m_edit_mutexes.size()];
-	}
+	inline std::mutex &GetBucketMutex(uint32_t bucket_id) { return m_edit_mutexes[bucket_id % m_edit_mutexes.size()]; }
 	inline uint32_t GetBucketWords(uint32_t bucket_id) const {
 		return m_bucket_words[bucket_id].load(std::memory_order_acquire);
 	}
@@ -60,20 +61,14 @@ private:
 	inline void ZeroPage(uint32_t page_id, uint32_t page_offset, uint32_t zero_words) {
 		std::fill(m_pages[page_id].get() + page_offset, m_pages[page_id].get() + page_offset + zero_words, 0);
 	}
+	inline void DeletePage(uint32_t page_id) {
+		m_pages[page_id] = nullptr;
+		m_page_deletes.insert(page_id);
+	}
 	inline void WritePage(uint32_t page_id, uint32_t page_offset, std::span<const uint32_t> word_span) {
 		if (!m_pages[page_id])
 			m_pages[page_id] = std::make_unique_for_overwrite<uint32_t[]>(GetConfig().GetWordsPerPage());
 		std::copy(word_span.begin(), word_span.end(), m_pages[page_id].get() + page_offset);
-
-		/* Range range = {page_offset, page_offset + (uint32_t)word_span.size()};
-		uint32_t gpu_page_id = page_id >> m_page_bits_per_gpu_page;
-		if (m_gpu_pages[gpu_page_id].p_mapped_data) {
-		    const auto &gpu_page = m_gpu_pages[gpu_page_id];
-		    uint32_t gpu_page_offset =
-		        ((page_id & ((1u << m_page_bits_per_gpu_page) - 1)) << GetConfig().word_bits_per_page) | range.begin;
-		    std::copy(m_pages[page_id].get() + range.begin, m_pages[page_id].get() + range.end,
-		              gpu_page.p_mapped_data + gpu_page_offset);
-		} else */
 		Range range = {page_offset, page_offset + (uint32_t)word_span.size()};
 		m_page_write_ranges.lazy_emplace_l(
 		    page_id, [&](auto &it) { it.second.Union(range); }, [&](const auto &ctor) { ctor(page_id, range); });
