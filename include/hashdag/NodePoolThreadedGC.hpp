@@ -9,7 +9,6 @@
 #include "NodePool.hpp"
 
 #include <algorithm>
-#include <cuckoohash_map.hh>
 #include <libfork/schedule/busy_pool.hpp>
 #include <libfork/task.hpp>
 #include <mutex>
@@ -23,7 +22,6 @@ template <typename Derived, std::unsigned_integral Word> class NodePoolThreadedG
 private:
 	using BucketMap = std::unordered_map<Word, std::vector<Word>>;
 	using LevelBucketMaps = std::vector<BucketMap>;
-	using ConcurrentNodeMap = libcuckoo::cuckoohash_map<Word, Word>;
 
 	inline const auto &get_node_pool() const {
 		return *static_cast<const NodePoolBase<Derived, Word> *>(static_cast<const Derived *>(this));
@@ -111,9 +109,9 @@ private:
 
 	template <lf::context Context>
 	inline lf::basic_task<void, Context>
-	lf_gc_shrink_inner_bucket(Word level, Word bucket_index, std::span<const Word> nodes,
-	                          const ConcurrentNodeMap::locked_table *p_child_node_map, ConcurrentNodeMap *p_node_map,
-	                          std::vector<Word> *bucket_caches) {
+	lf_gc_shrink_inner_bucket(Word level, Word level_bucket_base, std::span<const Word> nodes,
+	                          std::unordered_map<Word, Word> *p_node_table, std::vector<Word> *bucket_caches,
+	                          Word child_level_bucket_base, const std::unordered_map<Word, Word> *child_node_tables) {
 		if (nodes.empty())
 			co_return;
 
@@ -123,7 +121,6 @@ private:
 		const Word *page = nullptr;
 
 		std::array<Word, 9> node_cache;
-		const Word level_bucket_base = get_node_pool().m_bucket_level_bases[level];
 
 		for (Word node : nodes) {
 			// Read node to node cache
@@ -144,7 +141,10 @@ private:
 
 			// Alter child pointer and Re-Hash
 			for (Word i = 1; i < node_span.size(); ++i)
-				node_span[i] = p_child_node_map->at(node_span[i]);
+				node_span[i] =
+				    child_node_tables[(node_span[i] >> config.GetWordBitsPerBucket()) - child_level_bucket_base].at(
+				        node_span[i]);
+
 			const Word new_bucket_index = level_bucket_base + (typename Derived::WordSpanHasher{}(node_span) &
 			                                                   (config.GetBucketsAtLevel(level) - 1));
 
@@ -172,7 +172,7 @@ private:
 			}
 
 			// Update Node Map
-			p_node_map->insert(node, new_node);
+			(*p_node_table)[node] = new_node;
 		}
 
 		co_return;
@@ -200,7 +200,7 @@ private:
 
 	template <lf::context Context>
 	inline lf::basic_task<void, Context> lf_gc_shrink_leaf_bucket(Word bucket_index, std::span<const Word> nodes,
-	                                                              ConcurrentNodeMap *p_node_map) {
+	                                                              std::unordered_map<Word, Word> *p_node_table) {
 		const Config<Word> &config = get_node_pool().m_config;
 		// Leaf's hash won't change, so the bucket index remains
 		Word prev_bucket_words = get_node_pool().get_bucket_words(bucket_index);
@@ -224,7 +224,7 @@ private:
 				std::tie(new_node_ptr, new_bucket_words) =
 				    get_node_pool().append_node(bucket_index, new_bucket_words, leaf_span);
 
-				p_node_map->insert(node, *new_node_ptr);
+				(*p_node_table)[node] = *new_node_ptr;
 			}
 		}
 
@@ -236,14 +236,19 @@ private:
 	}
 
 	template <lf::context Context>
-	inline lf::basic_task<ConcurrentNodeMap, Context> lf_gc_backward_pass(LevelBucketMaps level_bucket_maps,
-	                                                                      std::vector<Word> *bucket_caches) {
+	inline lf::basic_task<std::vector<std::unordered_map<Word, Word>>, Context>
+	lf_gc_backward_pass(LevelBucketMaps level_bucket_maps, std::vector<Word> *bucket_caches) {
 		const Config<Word> &config = get_node_pool().m_config;
 
-		ConcurrentNodeMap node_maps[2]; // Ping-pong Node Maps
+		std::vector<std::unordered_map<Word, Word>> bucket_node_tables[2]; // Ping-pong Node Maps
+		{
+			Word max_level_buckets = get_max_level_buckets();
+			bucket_node_tables[0].resize(max_level_buckets);
+			bucket_node_tables[1].resize(max_level_buckets);
+		}
 
 		for (Word level = config.GetNodeLevels() - 1; ~level; --level) {
-			ConcurrentNodeMap &node_map = node_maps[level & 1u];
+			std::vector<std::unordered_map<Word, Word>> &cur_node_tables = bucket_node_tables[level & 1u];
 			BucketMap &bucket_map = level_bucket_maps[level];
 
 			Word buckets_at_level = get_node_pool().m_config.GetBucketsAtLevel(level);
@@ -257,29 +262,34 @@ private:
 					std::span<const Word> nodes = it == bucket_map.end() ? std::span<const Word>{} : it->second;
 
 					if (b == buckets_at_level - 1)
-						co_await lf_gc_shrink_leaf_bucket<Context>(bucket_index, nodes, &node_map);
+						co_await lf_gc_shrink_leaf_bucket<Context>(bucket_index, nodes, cur_node_tables.data() + b);
 					else
-						co_await lf_gc_shrink_leaf_bucket<Context>(bucket_index, nodes, &node_map).fork();
-				}
-				co_await lf::join();
-			} else {
-				auto child_node_map = node_maps[(level & 1u) ^ 1u].lock_table();
-
-				for (auto it = bucket_map.begin(); it != bucket_map.end();) {
-					Word bucket_index = it->first;
-					auto &nodes = it->second;
-
-					if (++it == bucket_map.end())
-						co_await lf_gc_shrink_inner_bucket<Context>(level, bucket_index, nodes, &child_node_map,
-						                                            &node_map, bucket_caches);
-					else
-						co_await lf_gc_shrink_inner_bucket<Context>(level, bucket_index, nodes, &child_node_map,
-						                                            &node_map, bucket_caches)
+						co_await lf_gc_shrink_leaf_bucket<Context>(bucket_index, nodes, cur_node_tables.data() + b)
 						    .fork();
 				}
 				co_await lf::join();
+			} else {
+				auto &child_node_tables = bucket_node_tables[(level & 1u) ^ 1u];
+				Word child_level_bucket_base = get_node_pool().m_bucket_level_bases[level + 1];
 
-				child_node_map.clear();
+				for (Word b = 0; b < buckets_at_level; ++b)
+					cur_node_tables[b].clear();
+
+				for (auto it = bucket_map.begin(); it != bucket_map.end();) {
+					Word bucket_index = it->first, b = bucket_index - level_bucket_base;
+					auto &nodes = it->second;
+
+					if (++it == bucket_map.end())
+						co_await lf_gc_shrink_inner_bucket<Context>(level, level_bucket_base, nodes,
+						                                            cur_node_tables.data() + b, bucket_caches,
+						                                            child_level_bucket_base, child_node_tables.data());
+					else
+						co_await lf_gc_shrink_inner_bucket<Context>(level, level_bucket_base, nodes,
+						                                            cur_node_tables.data() + b, bucket_caches,
+						                                            child_level_bucket_base, child_node_tables.data())
+						    .fork();
+				}
+				co_await lf::join();
 
 				for (Word b = 0; b < buckets_at_level; ++b) {
 					Word bucket_index = level_bucket_base + b;
@@ -294,7 +304,7 @@ private:
 				co_await lf::join();
 			}
 		}
-		co_return std::move(node_maps[0]);
+		co_return std::move(bucket_node_tables[0]);
 	}
 
 	inline Word get_max_level_buckets() const {
@@ -325,40 +335,34 @@ private:
 		return roots;
 	}
 
+	inline void gc_threaded(lf::busy_pool *p_lf_pool, std::span<NodePointer<Word>> root_ptrs) {
+		const Config<Word> &config = get_node_pool().m_config;
+
+		auto roots = gc_make_root_nodes(root_ptrs);
+		if (roots.empty())
+			return;
+		std::vector<std::vector<Word>> bucket_caches(get_max_level_buckets());
+		auto bucket_node_sets =
+		    p_lf_pool->schedule(lf_gc_forward_pass<lf::busy_pool::context>(std::move(roots), bucket_caches.data()));
+		auto node_tables = p_lf_pool->schedule(
+		    lf_gc_backward_pass<lf::busy_pool::context>(std::move(bucket_node_sets), bucket_caches.data()));
+		for (auto &root_ptr : root_ptrs)
+			if (root_ptr)
+				root_ptr = NodePointer<Word>(node_tables[*root_ptr >> config.GetWordBitsPerBucket()].at(*root_ptr));
+	}
+
 public:
 	inline NodePoolThreadedGC() { static_assert(std::is_base_of_v<NodePoolBase<Derived, Word>, Derived>); }
 
 	inline NodePointer<Word> ThreadedGC(lf::busy_pool *p_lf_pool, NodePointer<Word> root_ptr) {
-		auto roots = gc_make_root_nodes({&root_ptr, 1});
-		if (roots.empty())
-			return {};
-		std::vector<std::vector<Word>> parallel_bucket_caches(get_max_level_buckets());
-		auto bucket_node_sets = p_lf_pool->schedule(
-		    lf_gc_forward_pass<lf::busy_pool::context>(std::move(roots), parallel_bucket_caches.data()));
-		auto node_map = p_lf_pool->schedule(
-		    lf_gc_backward_pass<lf::busy_pool::context>(std::move(bucket_node_sets), parallel_bucket_caches.data()));
-		auto locked_node_map = node_map.lock_table();
-		auto ret = root_ptr ? NodePointer<Word>{locked_node_map.at(*root_ptr)} : root_ptr;
-		printf("%d -> %d\n", *root_ptr, *ret);
-		return ret;
+		gc_threaded(p_lf_pool, std::span<NodePointer<Word>>{&root_ptr, 1});
+		return root_ptr;
 	}
 
 	inline std::vector<NodePointer<Word>> ThreadedGC(lf::busy_pool *p_lf_pool,
-	                                                 std::span<const NodePointer<Word>> root_ptrs) {
-		auto roots = gc_make_root_nodes(root_ptrs);
-		if (roots.empty())
-			return {};
-		std::vector<std::vector<Word>> parallel_bucket_caches(get_max_level_buckets());
-		auto bucket_node_sets = p_lf_pool->schedule(
-		    lf_gc_forward_pass<lf::busy_pool::context>(std::move(roots), parallel_bucket_caches.data()));
-		auto node_map = p_lf_pool->schedule(
-		    lf_gc_backward_pass<lf::busy_pool::context>(std::move(bucket_node_sets), parallel_bucket_caches.data()));
-		auto locked_node_map = node_map.lock_table();
-		std::vector<NodePointer<Word>> ret;
-		ret.reserve(root_ptrs.size());
-		for (auto root_ptr : root_ptrs)
-			ret.push_back(root_ptr ? NodePointer<Word>{locked_node_map.at(*root_ptr)} : root_ptr);
-		return ret;
+	                                                 std::vector<NodePointer<Word>> root_ptrs) {
+		gc_threaded(p_lf_pool, root_ptrs);
+		return std::move(root_ptrs);
 	}
 };
 
