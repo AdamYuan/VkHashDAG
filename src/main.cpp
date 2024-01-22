@@ -163,19 +163,21 @@ int main() {
 	                                                hashdag::Config<uint32_t>::MakeDefault(16, 9, 14, 2, 7, 11));
 
 	auto edit_ns = ns([&]() {
-		dag_node_pool->SetRoot(dag_node_pool->Edit( dag_node_pool->GetRoot(),
+		dag_node_pool->SetRoot(dag_node_pool->ThreadedEdit(&busy_pool, dag_node_pool->GetRoot(),
 		                                                   AABBEditor{
 		                                                       .level = dag_node_pool->GetConfig().GetLowestLevel(),
 		                                                       .aabb_min = {0, 0, 0},
 		                                                       .aabb_max = {5000, 5000, 5000},
-		                                                   }));
-		dag_node_pool->SetRoot(dag_node_pool->Edit( dag_node_pool->GetRoot(),
+		                                                   },
+		                                                   10));
+		dag_node_pool->SetRoot(dag_node_pool->ThreadedEdit(&busy_pool, dag_node_pool->GetRoot(),
 		                                                   AABBEditor{
 		                                                       .level = dag_node_pool->GetConfig().GetLowestLevel(),
 		                                                       .aabb_min = {1001, 1000, 1000},
 		                                                       .aabb_max = {10000, 10000, 10000},
-		                                                   }));
-		/* dag_node_pool->SetRoot(dag_node_pool->ThreadedEdit(&busy_pool, dag_node_pool->GetRoot(),
+		                                                   },
+		                                                   10));
+		dag_node_pool->SetRoot(dag_node_pool->ThreadedEdit(&busy_pool, dag_node_pool->GetRoot(),
 		                                                   SphereEditor<false>{
 		                                                       .level = dag_node_pool->GetConfig().GetLowestLevel(),
 		                                                       .center = {5005, 5000, 5000},
@@ -188,7 +190,7 @@ int main() {
 		                                                       .center = {10000, 10000, 10000},
 		                                                       .r2 = 4000 * 4000,
 		                                                   },
-		                                                   10)); */
+		                                                   10));
 	});
 	printf("edit cost %lf ms\n", (double)edit_ns / 1000000.0);
 	auto flush_ns = ns([&]() {

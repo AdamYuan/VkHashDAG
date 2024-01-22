@@ -234,7 +234,6 @@ public:
 				scale_exp2 = fast_exp2<F>(scale - kStackSize);
 
 				// Restore parent voxel from the stack.
-				printf("%d\n", scale);
 				parent = stack[scale].node;
 				t_max = stack[scale].t_max;
 
