@@ -12,9 +12,12 @@ namespace hashdag {
 
 template <typename T, typename Word, typename ColorBlock>
 concept ColorPool = requires(T p, const T cp) {
-	{ p.GetBlock(NodeCoord<Word>{}) } -> std::convertible_to<ColorBlock &>;
 	{ cp.GetBlock(NodeCoord<Word>{}) } -> std::convertible_to<ColorBlock>;
-	p.AllocateBlock(NodeCoord<Word>{});
+
+	p.WriteBlock(NodeCoord<Word>{}, ColorBlock{});
+	p.WriteBlock(NodeCoord<Word>{}, [](ColorBlock &) {});
+
+	p.FreeBlock(NodeCoord<Word>{});
 };
 
 } // namespace hashdag

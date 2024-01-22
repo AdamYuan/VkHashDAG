@@ -40,6 +40,23 @@ template <std::unsigned_integral Word> struct NodeCoord {
 		};
 	}
 
+	inline constexpr NodeCoord GetParentCoord(Word parent_level) const {
+		Word bits = level - parent_level;
+		return {
+		    .level = parent_level,
+		    .pos = pos >> bits,
+		};
+	}
+
+	inline constexpr NodeCoord GetSubCoord(Word parent_level) const {
+		Word bits = level - parent_level;
+		Word mask = (Word(1) << bits) - Word(1);
+		return {
+		    .level = bits,
+		    .pos = pos & mask,
+		};
+	}
+
 	template <std::floating_point Float> inline constexpr glm::vec<3, Float> GetCenter() const {
 		Float base = Float(1) / Float(1u << level), offset = Float(0.5) * base;
 		return {
@@ -66,19 +83,11 @@ template <std::unsigned_integral Word> struct NodeCoord {
 	}
 	inline constexpr glm::vec<3, Word> GetLowerBoundAtLevel(Word at_level) const {
 		Word bits = at_level - level;
-		return {
-		    pos.x << bits,
-		    pos.y << bits,
-		    pos.z << bits,
-		};
+		return pos << bits;
 	}
 	inline constexpr glm::vec<3, Word> GetUpperBoundAtLevel(Word at_level) const {
 		Word bits = at_level - level;
-		return {
-		    (pos.x + 1) << bits,
-		    (pos.y + 1) << bits,
-		    (pos.z + 1) << bits,
-		};
+		return (pos + Word(1)) << bits;
 	}
 };
 

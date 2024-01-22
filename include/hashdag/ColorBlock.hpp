@@ -9,14 +9,16 @@
 #include <concepts>
 #include <glm/glm.hpp>
 
+#include "NodeCoord.hpp"
+
 namespace hashdag {
 
 template <typename T, typename Word, typename Color>
 concept ColorBlock = requires(T c, const T cc) {
-	{ cc.GetColor(glm::vec<3, Word>{}) } -> std::convertible_to<Color>;
-	c.SetColor(glm::vec<3, Word>{}, Color{});
+	{ cc.GetColor(NodeCoord<Word>{}) } -> std::convertible_to<Color>;
+	c.SetColor(NodeCoord<Word>{}, Color{});
 };
 
-} // namespace colorsvo
+} // namespace hashdag
 
 #endif // VKHASHDAG_COLORSVO_COLORBLOCK_HPP
