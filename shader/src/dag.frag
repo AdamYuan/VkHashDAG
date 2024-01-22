@@ -42,7 +42,7 @@ layout(push_constant) uniform uuPushConstant {
 struct StackItem {
 	uint node;
 	float t_max;
-} stack[STACK_SIZE];
+} stack[STACK_SIZE + 1];
 
 uint DAG_GetLeafFirstChildBits(in const uint node) {
 	/* uvec2 l = uvec2(uDAG[node], uDAG[node + 1]);

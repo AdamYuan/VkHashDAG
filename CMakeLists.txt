@@ -52,6 +52,8 @@ target_link_libraries(VkHashDAG PRIVATE
         phmap
         shader
 )
+target_compile_options(VkHashDAG PRIVATE -fsanitize=address)
+target_link_options(VkHashDAG PRIVATE -fsanitize=address)
 
 install(TARGETS VkHashDAG RUNTIME DESTINATION)
 

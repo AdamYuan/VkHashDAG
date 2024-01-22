@@ -108,7 +108,7 @@ public:
 		static constexpr F kEpsilon = std::numeric_limits<F>::epsilon();
 		static constexpr std::size_t kStackSize = std::numeric_limits<F>::digits - 1; // Fraction bits
 
-		std::array<StackItem<F>, kStackSize> stack;
+		std::array<StackItem<F>, kStackSize + 1> stack;
 
 		o += F{1};
 
@@ -234,6 +234,7 @@ public:
 				scale_exp2 = fast_exp2<F>(scale - kStackSize);
 
 				// Restore parent voxel from the stack.
+				printf("%d\n", scale);
 				parent = stack[scale].node;
 				t_max = stack[scale].t_max;
 
