@@ -157,7 +157,8 @@ int main() {
 	}
 
 	// auto dag_node_pool =
-	//    myvk::MakePtr<DAGNodePool>(generic_queue, sparse_queue, hashdag::Config<uint32_t>::MakeDefault(17, 9, 11, 0));
+	//     myvk::MakePtr<DAGNodePool>(generic_queue, sparse_queue, hashdag::Config<uint32_t>::MakeDefault(17, 9, 11,
+	//     0));
 
 	auto dag_node_pool = myvk::MakePtr<DAGNodePool>(generic_queue, sparse_queue,
 	                                                hashdag::Config<uint32_t>::MakeDefault(16, 9, 14, 2, 7, 11));
