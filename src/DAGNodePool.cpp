@@ -96,7 +96,7 @@ bool DAGNodePool::Flush(const myvk::SemaphoreGroup &wait_semaphores, const myvk:
 			alloc_gpu_pages.insert(gpu_page_id);
 	}
 
-	for (uint32_t page_id : m_page_deletes) {
+	for (uint32_t page_id : m_page_frees) {
 		uint32_t gpu_page_id = page_id >> m_page_bits_per_gpu_page;
 
 		uint32_t page_begin = gpu_page_id << m_page_bits_per_gpu_page;
@@ -199,7 +199,7 @@ bool DAGNodePool::Flush(const myvk::SemaphoreGroup &wait_semaphores, const myvk:
 	printf("scan1 %lf ms\n", (double)scan1_ns / 1000000.0); */
 
 	m_page_write_ranges.clear();
-	m_page_deletes.clear();
+	m_page_frees.clear();
 
 	return !alloc_gpu_pages.empty();
 }

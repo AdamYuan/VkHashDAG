@@ -178,7 +178,7 @@ private:
 		co_return;
 	}
 
-	inline void gc_bucket_delete_pages(Word bucket_index, Word bucket_words, Word prev_bucket_words) {
+	inline void gc_bucket_free_pages(Word bucket_index, Word bucket_words, Word prev_bucket_words) {
 		const Config<Word> &config = get_node_pool().m_config;
 
 		const auto get_upper_page_slot = [&config](Word words) {
@@ -189,7 +189,7 @@ private:
 		Word prev_page_slot = get_upper_page_slot(prev_bucket_words);
 
 		for (Word page_slot = get_upper_page_slot(bucket_words); page_slot < prev_page_slot; ++page_slot)
-			get_node_pool().delete_page(base_page_index | page_slot);
+			get_node_pool().free_page(base_page_index | page_slot);
 	}
 
 	template <lf::context Context>
@@ -209,7 +209,7 @@ private:
 
 		Word prev_bucket_words = get_node_pool().get_bucket_words(bucket_index);
 		get_node_pool().set_bucket_words(bucket_index, bucket_cache.size());
-		gc_bucket_delete_pages(bucket_index, bucket_cache.size(), prev_bucket_words);
+		gc_bucket_free_pages(bucket_index, bucket_cache.size(), prev_bucket_words);
 
 		co_return;
 	}
@@ -245,7 +245,7 @@ private:
 		}
 
 		get_node_pool().set_bucket_words(bucket_index, new_bucket_words);
-		gc_bucket_delete_pages(bucket_index, new_bucket_words, prev_bucket_words);
+		gc_bucket_free_pages(bucket_index, new_bucket_words, prev_bucket_words);
 
 		co_return;
 	}

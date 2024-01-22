@@ -38,7 +38,7 @@ concept ThreadedNodePool = NodePool<T, Word> && requires(T e, const T ce) {
 };
 
 template <typename T, typename Word>
-concept GCNodePool = NodePool<T, Word> && requires(T e) { e.DeletePage(Word{} /* Page Index */); };
+concept GCNodePool = NodePool<T, Word> && requires(T e) { e.FreePage(Word{} /* Page Index */); };
 
 template <typename Derived, std::unsigned_integral Word> class NodePoolBase {
 #ifndef HASHDAG_TEST
@@ -63,9 +63,9 @@ public:
 	inline void write_page(Word page_id, Word page_offset, std::span<const Word> word_span) {
 		static_cast<Derived *>(this)->WritePage(page_id, page_offset, word_span);
 	}
-	inline void delete_page(Word page_id) {
+	inline void free_page(Word page_id) {
 		static_assert(GCNodePool<Derived, Word>);
-		static_cast<Derived *>(this)->DeletePage(page_id);
+		static_cast<Derived *>(this)->FreePage(page_id);
 	}
 	inline auto &get_bucket_mutex(Word bucket_id) {
 		static_assert(ThreadedNodePool<Derived, Word>);

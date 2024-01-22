@@ -45,7 +45,7 @@ private:
 	    m_page_write_ranges;
 	phmap::parallel_flat_hash_set<uint32_t, std::hash<uint32_t>, std::equal_to<>, std::allocator<uint32_t>, 6,
 	                              std::mutex>
-	    m_page_deletes;
+	    m_page_frees;
 
 	// Functions for hashdag::NodePoolBase
 	friend class hashdag::NodePoolBase<DAGNodePool, uint32_t>;
@@ -61,9 +61,9 @@ private:
 	inline void ZeroPage(uint32_t page_id, uint32_t page_offset, uint32_t zero_words) {
 		std::fill(m_pages[page_id].get() + page_offset, m_pages[page_id].get() + page_offset + zero_words, 0);
 	}
-	inline void DeletePage(uint32_t page_id) {
+	inline void FreePage(uint32_t page_id) {
 		m_pages[page_id] = nullptr;
-		m_page_deletes.insert(page_id);
+		m_page_frees.insert(page_id);
 	}
 	inline void WritePage(uint32_t page_id, uint32_t page_offset, std::span<const uint32_t> word_span) {
 		if (!m_pages[page_id])
