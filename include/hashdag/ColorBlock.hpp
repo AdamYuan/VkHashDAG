@@ -7,8 +7,8 @@
 #define VKHASHDAG_COLORSVO_COLORBLOCK_HPP
 
 #include <concepts>
-#include <glm/glm.hpp>
 
+#include "Color.hpp"
 #include "NodeCoord.hpp"
 
 namespace hashdag {
@@ -18,6 +18,9 @@ concept ColorBlock = requires(T c, const T cc) {
 	{ cc.GetColor(NodeCoord<Word>{}) } -> std::convertible_to<Color>;
 	c.SetColor(NodeCoord<Word>{}, Color{});
 };
+
+// Variable Bitrate Block Encoding
+class VBRColorBlock {};
 
 } // namespace hashdag
 

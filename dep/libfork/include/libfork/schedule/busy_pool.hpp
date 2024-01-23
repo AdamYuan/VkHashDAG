@@ -47,10 +47,15 @@ class busy_pool {
     using queue<work_handle<context>>::push;
     using queue<work_handle<context>>::pop;
 
+	std::size_t get_worker_id() const { return m_worker_id; }
+	std::size_t get_worker_count() const { return m_workers; }
+
    private:
     friend class busy_pool;
 
     detail::xoshiro m_rng;
+	std::size_t m_worker_id;
+	std::size_t m_workers;
   };
 
   busy_pool(busy_pool const&) = delete;
@@ -72,8 +77,11 @@ class busy_pool {
     // Initialize the rngs.
     detail::xoshiro rng(std::random_device{});
 
+	std::size_t cnt = 0;
     for (auto& ctx : m_contexts) {
       ctx.m_rng = rng;
+	  ctx.m_worker_id = cnt++;
+	  ctx.m_workers = n;
       rng.long_jump();
     }
 

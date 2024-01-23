@@ -28,8 +28,11 @@ private:
 	inline auto &get_node_pool() { return *static_cast<NodePoolBase<Derived, Word> *>(static_cast<Derived *>(this)); }
 
 	template <lf::context Context>
-	inline lf::basic_task<void, Context> lf_gc_tag_bucket(Word level_bucket_base, std::span<const Word> nodes) {
-		HashSet<Word> local_node_set;
+	inline lf::basic_task<void, Context> lf_gc_tag_bucket(Word level_bucket_base, std::span<const Word> nodes,
+	                                                      HashSet<Word> *worker_node_sets) {
+
+		auto context = co_await lf::get_context();
+		HashSet<Word> *p_worker_node_set = worker_node_sets + context->get_worker_id();
 
 		for (Word node : nodes) {
 			const Word *p_node = get_node_pool().read_node(node);
@@ -38,9 +41,9 @@ private:
 
 			for (; child_mask; child_mask &= (child_mask - 1)) {
 				Word child = *(p_next_child++);
-				if (local_node_set.count(child))
+				if (p_worker_node_set->count(child))
 					continue;
-				local_node_set.insert(child);
+				p_worker_node_set->insert(child);
 				Word bucket_index = child >> get_node_pool().m_config.GetWordBitsPerBucket();
 
 				std::scoped_lock lock{get_node_pool().get_bucket_mutex(bucket_index)};
@@ -68,6 +71,9 @@ private:
 			level_bucket_maps[0][bucket].push_back(root);
 		}
 
+		auto context = co_await lf::get_context();
+		std::vector<HashSet<Word>> worker_node_sets(context->get_worker_count());
+
 		for (Word level = 1; level < get_node_pool().m_config.GetNodeLevels(); ++level) {
 			const auto &prev_bucket_map = level_bucket_maps[level - 1];
 			Word level_bucket_base = get_node_pool().m_bucket_level_bases[level];
@@ -78,11 +84,14 @@ private:
 			for (auto it = prev_bucket_map.begin(); it != prev_bucket_map.end();) {
 				const auto &nodes = it->second;
 				if (++it == prev_bucket_map.end())
-					co_await lf_gc_tag_bucket<Context>(level_bucket_base, nodes);
+					co_await lf_gc_tag_bucket<Context>(level_bucket_base, nodes, worker_node_sets.data());
 				else
-					co_await lf_gc_tag_bucket<Context>(level_bucket_base, nodes).fork();
+					co_await lf_gc_tag_bucket<Context>(level_bucket_base, nodes, worker_node_sets.data()).fork();
 			}
 			co_await lf::join();
+
+			for (HashSet<Word> &node_set : worker_node_sets)
+				node_set.clear();
 
 			auto &cur_bucket_map = level_bucket_maps[level];
 			Word buckets_at_level = get_node_pool().m_config.GetBucketsAtLevel(level);

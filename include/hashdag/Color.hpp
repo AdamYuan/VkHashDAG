@@ -8,6 +8,8 @@
 
 namespace hashdag {
 
+
+
 }
 
 #endif // VKHASHDAG_COLORSVO_COLOR_HPP
