@@ -68,6 +68,8 @@ class busy_pool {
 
   static_assert(::lf::context<context>);
 
+  std::size_t get_worker_count() const { return m_workers.size(); }
+
   /**
    * @brief Construct a new busy_pool object.
    *

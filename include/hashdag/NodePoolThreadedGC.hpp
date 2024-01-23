@@ -26,95 +26,82 @@ private:
 		return *static_cast<const NodePoolBase<Derived, Word> *>(static_cast<const Derived *>(this));
 	}
 	inline auto &get_node_pool() { return *static_cast<NodePoolBase<Derived, Word> *>(static_cast<Derived *>(this)); }
+	inline const Config<Word> &get_config() const { return get_node_pool().m_config; }
 
 	template <lf::context Context>
-	inline lf::basic_task<void, Context> lf_gc_tag_bucket(Word level_bucket_base, std::span<const Word> nodes,
-	                                                      HashSet<Word> *worker_node_sets) {
-
+	inline lf::basic_task<void, Context> lf_gc_tag_bucket(std::span<std::vector<Word>> bucket_nodes, Word bucket_begin,
+	                                                      Word bucket_end, std::span<HashSet<Word>> worker_node_sets,
+	                                                      bool leaf) {
 		auto context = co_await lf::get_context();
-		HashSet<Word> *p_worker_node_set = worker_node_sets + context->get_worker_id();
+		HashSet<Word> &worker_node_set = worker_node_sets[context->get_worker_id()];
 
-		for (Word node : nodes) {
-			const Word *p_node = get_node_pool().read_node(node);
-			Word child_mask = *p_node;
-			const Word *p_next_child = p_node + 1;
+		for (Word bucket = bucket_begin; bucket != bucket_end; ++bucket) {
+			auto &nodes = bucket_nodes[bucket];
 
-			for (; child_mask; child_mask &= (child_mask - 1)) {
-				Word child = *(p_next_child++);
-				if (p_worker_node_set->count(child))
-					continue;
-				p_worker_node_set->insert(child);
-				Word bucket_index = child >> get_node_pool().m_config.GetWordBitsPerBucket();
+			if (nodes.empty())
+				continue;
 
-				std::scoped_lock lock{get_node_pool().get_bucket_mutex(bucket_index)};
-				m_bucket_caches[bucket_index - level_bucket_base].push_back(child);
+			std::sort(nodes.begin(), nodes.end());
+			nodes.erase(std::unique(nodes.begin(), nodes.end()), nodes.end());
+
+			if (!leaf) {
+				for (Word node : nodes) {
+					const Word *p_node = get_node_pool().read_node(node);
+					Word child_mask = *p_node;
+					const Word *p_next_child = p_node + 1;
+
+					for (; child_mask; child_mask &= (child_mask - 1)) {
+						Word child = *(p_next_child++);
+						if (worker_node_set.count(child))
+							continue;
+						worker_node_set.insert(child);
+						Word child_bucket = child >> get_config().GetWordBitsPerBucket();
+
+						std::scoped_lock lock{get_node_pool().get_bucket_mutex(child_bucket)};
+						bucket_nodes[child_bucket].push_back(child);
+					}
+				}
 			}
 		}
 		co_return;
 	}
 
 	template <lf::context Context>
-	inline lf::basic_task<void, Context> lf_gc_reduce_bucket(std::vector<Word> *p_nodes) {
-		auto &nodes = *p_nodes;
-		std::sort(nodes.begin(), nodes.end());
-		nodes.erase(std::unique(nodes.begin(), nodes.end()), nodes.end());
-		co_return;
-	}
-
-	template <lf::context Context>
-	inline lf::basic_task<std::vector<BucketMap>, Context> lf_gc_forward_pass(std::vector<Word> root_nodes) {
-		std::vector<BucketMap> level_bucket_maps(get_node_pool().m_config.GetNodeLevels());
+	inline lf::basic_task<std::vector<std::vector<Word>>, Context> lf_gc_forward_pass(std::vector<Word> root_nodes,
+	                                                                                  Word parallel_bits) {
+		std::vector<std::vector<Word>> bucket_nodes(get_config().GetTotalBuckets());
 
 		// Push root level
 		for (Word root : root_nodes) {
-			Word bucket = root >> get_node_pool().m_config.GetWordBitsPerBucket();
-			level_bucket_maps[0][bucket].push_back(root);
+			Word bucket_index = root >> get_node_pool().m_config.GetWordBitsPerBucket();
+			bucket_nodes[bucket_index].push_back(root);
 		}
 
 		auto context = co_await lf::get_context();
 		std::vector<HashSet<Word>> worker_node_sets(context->get_worker_count());
 
-		for (Word level = 1; level < get_node_pool().m_config.GetNodeLevels(); ++level) {
-			const auto &prev_bucket_map = level_bucket_maps[level - 1];
-			Word level_bucket_base = get_node_pool().m_bucket_level_bases[level];
-
-			if (prev_bucket_map.empty())
-				break;
-
-			for (auto it = prev_bucket_map.begin(); it != prev_bucket_map.end();) {
-				const auto &nodes = it->second;
-				if (++it == prev_bucket_map.end())
-					co_await lf_gc_tag_bucket<Context>(level_bucket_base, nodes, worker_node_sets.data());
-				else
-					co_await lf_gc_tag_bucket<Context>(level_bucket_base, nodes, worker_node_sets.data()).fork();
-			}
-			co_await lf::join();
+		for (Word level = 0; level < get_config().GetNodeLevels(); ++level) {
+			Word bucket_bits = get_config().bucket_bits_each_level[level];
+			Word loop_bits = std::min(parallel_bits, bucket_bits);
+			Word bucket_base = get_node_pool().m_bucket_level_bases[level];
+			Word block_bits = bucket_bits - loop_bits;
+			bool leaf = level == get_config().GetNodeLevels() - 1;
 
 			for (HashSet<Word> &node_set : worker_node_sets)
 				node_set.clear();
 
-			auto &cur_bucket_map = level_bucket_maps[level];
-			Word buckets_at_level = get_node_pool().m_config.GetBucketsAtLevel(level);
-			for (Word b = 0; b < buckets_at_level; ++b) {
-				if (m_bucket_caches[b].empty())
-					continue;
-				cur_bucket_map[level_bucket_base + b] = std::move(m_bucket_caches[b]);
-				m_bucket_caches[b].clear();
-			}
-
-			if (cur_bucket_map.empty())
-				break;
-
-			for (auto it = cur_bucket_map.begin(); it != cur_bucket_map.end();) {
-				auto &nodes = it->second;
-				if (++it == cur_bucket_map.end())
-					co_await lf_gc_reduce_bucket<Context>(&nodes);
+			for (Word i = 0; i < (1u << loop_bits); ++i) {
+				Word bucket_begin = bucket_base + (i << block_bits);
+				Word bucket_end = bucket_begin + (1u << block_bits);
+				if (i + 1 == (1u << loop_bits))
+					co_await lf_gc_tag_bucket<Context>(bucket_nodes, bucket_begin, bucket_end, worker_node_sets, leaf);
 				else
-					co_await lf_gc_reduce_bucket<Context>(&nodes).fork();
+					co_await lf_gc_tag_bucket<Context>(bucket_nodes, bucket_begin, bucket_end, worker_node_sets, leaf)
+					    .fork();
 			}
 			co_await lf::join();
 		}
-		co_return level_bucket_maps;
+		co_return bucket_nodes;
 	}
 
 	template <lf::context Context>
@@ -352,28 +339,28 @@ private:
 			if (root_ptr)
 				roots.push_back(*root_ptr);
 
-		// Sort and remove duplicates
-		std::sort(roots.begin(), roots.end());
-		roots.erase(std::unique(roots.begin(), roots.end()), roots.end());
-
 		return roots;
 	}
 
 	inline void gc_threaded(lf::busy_pool *p_lf_pool, std::span<NodePointer<Word>> root_ptrs) {
 		const Config<Word> &config = get_node_pool().m_config;
 
+		Word parallel_bits = std::bit_width(p_lf_pool->get_worker_count()) << 1u;
+
 		auto roots = gc_make_root_nodes(root_ptrs);
-		auto level_bucket_maps = p_lf_pool->schedule(lf_gc_forward_pass<lf::busy_pool::context>(std::move(roots)));
-		auto node_tables =
+		auto bucket_nodes =
+		    p_lf_pool->schedule(lf_gc_forward_pass<lf::busy_pool::context>(std::move(roots), parallel_bits));
+
+		/* auto node_tables =
 		    p_lf_pool->schedule(lf_gc_backward_pass<lf::busy_pool::context>(std::move(level_bucket_maps)));
 		for (auto &root_ptr : root_ptrs)
-			if (root_ptr)
-				root_ptr = NodePointer<Word>(node_tables[*root_ptr >> config.GetWordBitsPerBucket()].at(*root_ptr));
+		    if (root_ptr)
+		        root_ptr = NodePointer<Word>(node_tables[*root_ptr >> config.GetWordBitsPerBucket()].at(*root_ptr));
 		// Re-initialize filled node pointers if altered
 		if (!get_node_pool().m_filled_node_pointers.empty()) {
-			get_node_pool().m_filled_node_pointers.clear();
-			get_node_pool().make_filled_node_pointers();
-		}
+		    get_node_pool().m_filled_node_pointers.clear();
+		    get_node_pool().make_filled_node_pointers();
+		} */
 	}
 
 	std::vector<std::vector<Word>> m_bucket_caches;
