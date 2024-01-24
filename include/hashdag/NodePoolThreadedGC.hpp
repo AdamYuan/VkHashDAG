@@ -19,9 +19,6 @@ template <typename Derived, std::unsigned_integral Word, //
           template <typename, typename> typename HashMap, template <typename> typename HashSet>
 class NodePoolThreadedGC {
 private:
-	using BucketMap = HashMap<Word, std::vector<Word>>;
-	using NodeTable = HashMap<Word, Word>;
-
 	inline const auto &get_node_pool() const {
 		return *static_cast<const NodePoolBase<Derived, Word> *>(static_cast<const Derived *>(this));
 	}
@@ -229,8 +226,9 @@ private:
 	}
 
 	template <lf::context Context>
-	inline lf::basic_task<void, Context>
-	lf_gc_shrink_leaf_bucket(Word first_bucket, std::span<std::vector<Word>> bucket_nodes, NodeTable *p_node_table) {
+	inline lf::basic_task<void, Context> lf_gc_shrink_leaf_bucket(Word first_bucket,
+	                                                              std::span<std::vector<Word>> bucket_nodes,
+	                                                              HashMap<Word, Word> *p_node_table) {
 		const Config<Word> &config = get_node_pool().m_config;
 
 		Word bucket = first_bucket;
@@ -372,8 +370,7 @@ private:
 	inline void gc_threaded(lf::busy_pool *p_lf_pool, std::span<NodePointer<Word>> root_ptrs) {
 		m_parallel_bits = std::bit_width(p_lf_pool->get_worker_count()) << 1u;
 
-		auto roots = gc_make_root_nodes(root_ptrs);
-		p_lf_pool->schedule(lf_gc_forward_pass<lf::busy_pool::context>(std::move(roots)));
+		p_lf_pool->schedule(lf_gc_forward_pass<lf::busy_pool::context>(gc_make_root_nodes(root_ptrs)));
 		p_lf_pool->schedule(lf_gc_backward_pass<lf::busy_pool::context>(root_ptrs));
 		// Re-initialize filled node pointers if altered
 		if (!get_node_pool().m_filled_node_pointers.empty()) {
