@@ -19,9 +19,6 @@ concept ColorBlock = requires(T c, const T cc) {
 	c.SetColor(NodeCoord<Word>{}, Color{});
 };
 
-// Variable Bitrate Block Encoding
-class VBRColorBlock {};
-
 } // namespace hashdag
 
 #endif // VKHASHDAG_COLORSVO_COLORBLOCK_HPP
