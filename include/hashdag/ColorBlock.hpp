@@ -16,6 +16,10 @@ namespace hashdag {
 template <typename T, typename Word, typename Color>
 concept ColorBlock = requires(T c, const T cc) {
 	{ cc.GetColor(NodeCoord<Word>{}) } -> std::convertible_to<Color>;
+};
+
+template <typename T, typename Word, typename Color>
+concept ColorBlockWriter = requires(T c, const T cc) {
 	c.SetColor(NodeCoord<Word>{}, Color{});
 };
 
