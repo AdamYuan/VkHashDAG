@@ -107,20 +107,71 @@ private:
 	VBRColorBlock *m_p_color_block;
 	uint32_t m_levels, m_weight_bit_count = 0, m_voxel_count = 0;
 
-	inline void copy(uint32_t voxel_begin, uint32_t voxel_end) {}
+	inline void append_weight_bits(uint32_t weight, uint32_t bits_per_weight, uint32_t weight_count) {
+		uint32_t bit_offset = m_weight_bit_count & 31u;
+
+		if (weight_count == 1) {
+			m_weight_bits.back() |= weight << bit_offset;
+			if (bit_offset + bits_per_weight > 32u)
+				m_weight_bits.push_back(weight >> (bit_offset + bits_per_weight - 32u));
+
+			m_weight_bit_count += bits_per_weight;
+			return;
+		}
+
+		uint64_t weight64 = weight | (weight << bits_per_weight);
+		weight64 |= (weight64 << (bits_per_weight << 1ULL));
+		weight64 |= (weight64 << (bits_per_weight << 2ULL));
+		weight64 |= (weight64 << (bits_per_weight << 3ULL));
+		weight64 |= (weight64 << (bits_per_weight << 4ULL));
+
+		uint32_t weight_bits_remain = weight_count * bits_per_weight;
+		m_weight_bits.back() |= weight64 << bit_offset;
+		if (weight_bits_remain > 32u - bit_offset) {
+			weight_bits_remain -= 32u - bit_offset;
+
+			uint32_t new_32_count = (weight_bits_remain >> 5u) + (weight_bits_remain & 31u) ? 1 : 0;
+			uint32_t shift = (32u - bit_offset) % bits_per_weight;
+			if (bits_per_weight == 3) {
+				m_weight_bits.reserve(m_weight_bits.size() + new_32_count);
+				for (uint32_t i = 0; i < new_32_count; ++i) {
+					m_weight_bits.push_back(uint32_t(weight64 >> shift));
+					shift = (shift + 2) % 3; // (shift - 1) MOD 3. 0, 2, 1, 0, 2, 1, 0, ... sequence
+				}
+			} else {
+				// bits_per_weight == 1 or 2 or 4, so that 32 % bits_per_weight == 0
+				weight64 >>= (32u - bit_offset) % bits_per_weight;
+				// all bits are same across uint32's
+				m_weight_bits.resize(m_weight_bits.size() + new_32_count, uint32_t(weight64 >> shift));
+			}
+		}
+
+		m_weight_bit_count += weight_count * bits_per_weight;
+	}
+	inline void copy_voxels(uint32_t voxel_count) { m_voxel_count += voxel_count; }
+	inline void append_voxels(VBRColor color, uint32_t voxel_count) {
+		uint32_t macro_block_id = m_voxel_count >> kVoxelBitsPerMacroBlock;
+		for (uint32_t i = 0; i < voxel_count;) {
+			uint32_t voxel_index = m_voxel_count + i;
+		}
+
+		m_voxel_count += voxel_count;
+	}
 	inline void finalize() {
 		uint32_t full_voxel_count = 1u << (m_levels * 3);
-		if (m_voxel_count >= full_voxel_count)
-			return;
-		// copy remaining voxels if not full
-		copy(m_voxel_count, full_voxel_count);
-		m_voxel_count = full_voxel_count;
+		if (m_voxel_count < full_voxel_count)
+			copy_voxels(full_voxel_count - m_voxel_count);
 	}
 
 public:
 	inline VBRColorBlockWriter(VBRColorBlock *p_color_block, uint32_t levels)
 	    : m_p_color_block{p_color_block}, m_levels{levels} {}
-	inline ~VBRColorBlockWriter() { finalize(); }
+	inline ~VBRColorBlockWriter() {
+		finalize();
+		m_p_color_block->m_macro_blocks = std::move(m_macro_blocks);
+		m_p_color_block->m_block_headers = std::move(m_block_headers);
+		m_p_color_block->m_weight_bits = std::move(m_weight_bits);
+	}
 };
 
 } // namespace hashdag
