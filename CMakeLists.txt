@@ -60,8 +60,15 @@ target_link_libraries(VkHashDAG PRIVATE
 install(TARGETS VkHashDAG RUNTIME DESTINATION)
 
 add_executable(HashDAGTest
-        test/main.cpp
+        test/test.cpp
 )
 target_include_directories(HashDAGTest PRIVATE include)
 target_compile_definitions(HashDAGTest PRIVATE -DHASHDAG_TEST)
 target_link_libraries(HashDAGTest PRIVATE libfork::libfork)
+
+add_executable(VBRTest
+        test/vbr_test.cpp
+)
+target_include_directories(VBRTest PRIVATE include)
+target_compile_definitions(VBRTest PRIVATE -DHASHDAG_TEST)
+target_link_libraries(VBRTest PRIVATE libmorton::libmorton)
