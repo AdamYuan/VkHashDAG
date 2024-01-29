@@ -102,7 +102,7 @@ public:
 			last_bits = remain_bits;
 
 			std::size_t word_count = (remain_bits >> kWordMaskBits) + ((remain_bits & kWordMask) ? 1 : 0);
-			int r_rot = (kWordBits - bit_offset) % bits;
+			Word r_rot = (kWordBits - bit_offset) % bits;
 			if (bits == 3) {
 				Word rotr_full_words[3] = {
 				    get_rotr_full_word(0),
@@ -112,10 +112,7 @@ public:
 				for (uint32_t i = 0; i < word_count; ++i) {
 					m_bits.push_back(rotr_full_words[r_rot]);
 					static_assert(kWordBits % 3 != 0);
-					if constexpr (kWordBits % 3 == 2)
-						r_rot = (r_rot + 2) % 3;
-					else
-						r_rot = (r_rot + 1) % 3;
+					r_rot = (r_rot + (kWordBits % 3)) % 3;
 				}
 			} else
 				// bits == 1 or 2 or 4, so that kWordBits % bits == 0 and all bits are same across words
@@ -127,7 +124,7 @@ public:
 
 		m_bit_count += bits * count;
 	}
-	inline void Paste(const VBRBitset<Word> &src, std::size_t src_begin, std::size_t src_bits) {
+	inline void Copy(const VBRBitset<Word> &src, std::size_t src_begin, std::size_t src_bits) {
 		if (src_bits == 0)
 			return;
 
@@ -135,22 +132,44 @@ public:
 		if (bit_offset == 0)
 			m_bits.emplace_back();
 
-		std::size_t remain_bits = src_bits, last_bits;
+		std::size_t word_count = 0, last_bits; // Additional words
+
+		if (bit_offset + src_bits <= kWordBits)
+			last_bits = src_bits + bit_offset;
+		else {
+			std::size_t remain_bits = src_bits - (kWordBits - bit_offset);
+			last_bits = remain_bits;
+			word_count = std::size_t(remain_bits >> kWordMaskBits) + std::size_t((remain_bits & kWordMask) ? 1 : 0);
+			// printf("SB = %zu, RB = %zu, WC = %zu\n", src_bits, remain_bits, word_count);
+		}
+
+		auto src_word_it = src.m_bits.begin() + (src_begin >> kWordMaskBits);
 		if (bit_offset == src_bit_offset) {
-			auto src_word_it = src.m_bits.begin() + (src_begin >> kWordMaskBits);
+			// printf("=\n");
 			m_bits.back() |= Word(*src_word_it >> bit_offset) << bit_offset;
-
-			if (bit_offset + remain_bits <= kWordBits)
-				last_bits = remain_bits + bit_offset;
-			else {
-				remain_bits -= kWordBits - bit_offset;
-				last_bits = remain_bits;
-
-				std::size_t word_count = (remain_bits >> kWordMaskBits) + ((remain_bits & kWordMask) ? 1 : 0);
-				m_bits.insert(m_bits.end(), src_word_it + 1, src_word_it + 1 + word_count);
+			m_bits.insert(m_bits.end(), src_word_it + 1, src_word_it + 1 + word_count);
+		} else if (src_bit_offset < bit_offset) {
+			Word prev_word = *(src_word_it++);
+			m_bits.back() |= (prev_word >> src_bit_offset) << bit_offset;
+			Word shl = bit_offset - src_bit_offset;
+			Word prev_shr = kWordBits - shl;
+			for (std::size_t i = 0; i < word_count; ++i) {
+				Word word = src_word_it == src.m_bits.end() ? Word(0) : *(src_word_it++);
+				m_bits.push_back((prev_word >> prev_shr) | (word << shl));
+				prev_word = word;
 			}
 		} else {
-			// TODO: Implement unaligned Paste()
+			// src_bit_offset > bit_offset
+			Word word = *(src_word_it++);
+			Word next_word = src_word_it == src.m_bits.end() ? Word(0) : *(src_word_it++);
+			Word shr = src_bit_offset - bit_offset, next_shl = kWordBits - shr;
+			m_bits.back() |= (word >> src_bit_offset) << bit_offset;
+			m_bits.back() |= next_word << next_shl;
+			for (std::size_t i = 0; i < word_count; ++i) {
+				word = next_word;
+				next_word = src_word_it == src.m_bits.end() ? Word(0) : *(src_word_it++);
+				m_bits.push_back((word >> shr) | (next_word << next_shl));
+			}
 		}
 
 		// Mask out exceeded bits
@@ -230,20 +249,6 @@ private:
 	VBRColorBlock *m_p_color_block;
 	uint32_t m_levels, m_weight_bit_count = 0, m_voxel_count = 0;
 
-	inline void copy_weight_bits(uint32_t src_weight_begin, uint32_t bits_per_weight, uint32_t weight_count) {
-		uint32_t bit_offset = m_weight_bit_count & 31u, src_bit_offset = src_weight_begin & 31u;
-		uint32_t weight_bits_remain = weight_count * bits_per_weight;
-
-		if (bit_offset == src_bit_offset) {
-			if (weight_bits_remain > 32u - bit_offset) {
-				weight_bits_remain -= 32u - bit_offset;
-			}
-
-		} else {
-		}
-
-		m_weight_bit_count += weight_count * bits_per_weight;
-	}
 	inline void copy_voxels(uint32_t src_voxel_begin, uint32_t voxel_count) {
 		if (m_p_color_block->Empty()) {
 			append_voxels(VBRColor{}, voxel_count);
