@@ -10,9 +10,14 @@
 #include "ColorBlock.hpp"
 
 #include <algorithm>
+#include <libmorton/morton.h>
 #include <vector>
 
 namespace hashdag {
+
+inline uint32_t VBRGetMortonIndex(const glm::u32vec3 &pos) {
+	return libmorton::morton3D_32_encode(pos.x, pos.y, pos.z);
+}
 
 class VBRColor {
 private:
@@ -65,10 +70,11 @@ private:
 	std::vector<Word> m_bits;
 	std::size_t m_bit_count = 0;
 
-	// unit bits = 1, 2, 3, 4 is guaranteed for VBR
+	// unit bits = 1, 2, 3 is guaranteed for VBR
 
 public:
 	inline const std::vector<Word> &GetData() const { return m_bits; }
+	inline std::size_t Size() const { return m_bit_count; }
 	inline void Push(Word word, Word bits, std::size_t count = 1) {
 		if (count == 0)
 			return;
@@ -114,9 +120,10 @@ public:
 					static_assert(kWordBits % 3 != 0);
 					r_rot = (r_rot + (kWordBits % 3)) % 3;
 				}
-			} else
-				// bits == 1 or 2 or 4, so that kWordBits % bits == 0 and all bits are same across words
+			} else {
+				// bits == 1 or 2, so that kWordBits % bits == 0 and all bits are same across words
 				m_bits.resize(m_bits.size() + word_count, get_rotr_full_word(r_rot));
+			}
 		}
 		// Mask out exceeded bits
 		if ((last_bits &= kWordMask))
@@ -151,8 +158,7 @@ public:
 		} else if (src_bit_offset < bit_offset) {
 			Word prev_word = *(src_word_it++);
 			m_bits.back() |= (prev_word >> src_bit_offset) << bit_offset;
-			Word shl = bit_offset - src_bit_offset;
-			Word prev_shr = kWordBits - shl;
+			Word shl = bit_offset - src_bit_offset, prev_shr = kWordBits - shl;
 			for (std::size_t i = 0; i < word_count; ++i) {
 				Word word = src_word_it == src.m_bits.end() ? Word(0) : *(src_word_it++);
 				m_bits.push_back((prev_word >> prev_shr) | (word << shl));
@@ -191,7 +197,11 @@ public:
 };
 
 class VBRColorBlock {
+#ifdef HASHDAG_TEST
+public:
+#else
 private:
+#endif
 	static constexpr uint32_t kVoxelBitsPerMacroBlock = 14u;
 	static constexpr uint32_t kVoxelsPerMacroBlock = 1u << kVoxelBitsPerMacroBlock;
 
@@ -200,37 +210,37 @@ private:
 	VBRBitset<uint32_t> m_weight_bits;
 
 	struct VoxelIndexInfo {
-		uint32_t macro_block_id, block_header_id, block_voxel_offset;
+		uint32_t macro_id, block_id, block_offset;
 	};
 
 	inline VoxelIndexInfo get_voxel_index_info(uint32_t voxel_index) const {
-		uint32_t macro_block_id = voxel_index >> kVoxelBitsPerMacroBlock,
-		         voxel_index_offset = voxel_index & (kVoxelsPerMacroBlock - 1u);
+		uint32_t macro_id = voxel_index >> kVoxelBitsPerMacroBlock,
+		         macro_offset = voxel_index & (kVoxelsPerMacroBlock - 1u);
 
-		auto block_begin = m_block_headers.begin() + m_macro_blocks[macro_block_id].first_block,
-		     block_end = macro_block_id + 1 == m_macro_blocks.size()
+		auto block_begin = m_block_headers.begin() + m_macro_blocks[macro_id].first_block,
+		     block_end = macro_id + 1 == m_macro_blocks.size()
 		                     ? m_block_headers.end()
-		                     : m_block_headers.begin() + m_macro_blocks[macro_block_id + 1].first_block;
+		                     : m_block_headers.begin() + m_macro_blocks[macro_id + 1].first_block;
 
-		auto block_it = std::upper_bound(block_begin, block_end, voxel_index_offset,
+		auto block_it = std::upper_bound(block_begin, block_end, macro_offset,
 		                                 [](uint32_t i, VBRBlockHeader b) { return i < b.GetVoxelIndexOffset(); }) -
 		                1;
 
-		uint32_t block_header_id = block_it - m_block_headers.begin();
-		uint32_t block_voxel_offset = voxel_index_offset - block_it->GetVoxelIndexOffset();
+		uint32_t block_id = block_it - m_block_headers.begin();
+		uint32_t block_offset = macro_offset - block_it->GetVoxelIndexOffset();
 
-		return {macro_block_id, block_header_id, block_voxel_offset};
+		return {macro_id, block_id, block_offset};
 	}
 
 	inline VBRColor get_color(uint32_t voxel_index) const {
-		auto [macro_block_id, block_header_id, block_voxel_offset] = get_voxel_index_info(voxel_index);
-		VBRBlockHeader block = m_block_headers[block_header_id];
+		auto [macro_id, block_id, block_offset] = get_voxel_index_info(voxel_index);
+		VBRBlockHeader block = m_block_headers[block_id];
 		uint32_t weight_bits = block.GetBitsPerWeight();
 		if (weight_bits == 0)
 			return {RGB8Color(block.colors)};
 
 		uint32_t weight_index =
-		    m_macro_blocks[macro_block_id].weight_start + block.GetWeightOffset() + block_voxel_offset * weight_bits;
+		    m_macro_blocks[macro_id].weight_start + block.GetWeightOffset() + block_offset * weight_bits;
 		return VBRColor{R5G6B5Color(block.colors), R5G6B5Color(block.colors >> 16u),
 		                (uint8_t)m_weight_bits.Get(weight_index, weight_bits), (uint8_t)weight_bits};
 	}
@@ -239,74 +249,120 @@ private:
 
 public:
 	template <std::unsigned_integral Word> inline VBRColor GetColor(const NodeCoord<Word> &coord) const {
-		return get_color(coord.GetMortonIndex());
+		return get_color(VBRGetMortonIndex(coord.pos));
 	}
 	inline bool Empty() const { return m_macro_blocks.empty(); }
 };
 
 class VBRColorBlockWriter final : public VBRColorBlock {
+#ifdef HASHDAG_TEST
+public:
+#else
 private:
-	VBRColorBlock *m_p_color_block;
-	uint32_t m_levels, m_weight_bit_count = 0, m_voxel_count = 0;
+#endif
+	VBRColorBlock *m_p_src;
+	uint32_t m_levels, m_voxel_count = 0;
 
-	inline void copy_voxels(uint32_t src_voxel_begin, uint32_t voxel_count) {
-		if (m_p_color_block->Empty()) {
-			append_voxels(VBRColor{}, voxel_count);
-			return;
-		}
+	inline uint32_t get_full_voxel_count() const { return 1u << (m_levels * 3u); }
 
-		auto [src_macro_block_id, src_block_header_id, src_block_voxel_offset] =
-		    m_p_color_block->get_voxel_index_info(src_voxel_begin);
-
-		m_voxel_count += voxel_count;
-	}
-
-	inline void append_voxels(VBRColor color, uint32_t voxel_count) {
+	inline void append(uint32_t colors, uint32_t bits_per_weight, uint32_t voxel_count, auto &&push_weight_func) {
 		for (uint32_t i = 0; i < voxel_count;) {
 			uint32_t voxel_index = m_voxel_count + i;
 
-			uint32_t macro_block_id = voxel_index >> kVoxelBitsPerMacroBlock;
-			if (macro_block_id >= m_macro_blocks.size()) {
+			uint32_t macro_id = voxel_index >> kVoxelBitsPerMacroBlock;
+			if (macro_id >= m_macro_blocks.size()) {
 				m_macro_blocks.push_back(VBRMacroBlock{
 				    .first_block = uint32_t(m_block_headers.size()),
-				    .weight_start = m_weight_bit_count,
+				    .weight_start = uint32_t(m_weight_bits.Size()),
 				});
 				// assert(voxel_index % kVoxelsPerMacroBlock == 0);
-				m_block_headers.emplace_back(color.GetColors(), 0, color.GetBitsPerWeight(), 0);
+				m_block_headers.emplace_back(colors, 0, bits_per_weight, 0);
 			}
 
-			if (color.GetColors() == m_block_headers.back().colors &&
-			    color.GetBitsPerWeight() == m_block_headers.back().GetBitsPerWeight()) {
-			} else {
-				m_block_headers.emplace_back(color.GetColors(), voxel_index & (kVoxelsPerMacroBlock - 1u),
-				                             color.GetBitsPerWeight(),
-				                             m_weight_bit_count - m_macro_blocks.back().weight_start);
+			if (colors != m_block_headers.back().colors ||
+			    bits_per_weight != m_block_headers.back().GetBitsPerWeight()) {
+				m_block_headers.emplace_back(colors, voxel_index & (kVoxelsPerMacroBlock - 1u), bits_per_weight,
+				                             uint32_t(m_weight_bits.Size()) - m_macro_blocks.back().weight_start);
 			}
 
 			uint32_t append_voxel_count =
-			    std::min(voxel_count - i, ((macro_block_id + 1u) << kVoxelBitsPerMacroBlock) - voxel_index);
-			if (color.GetBitsPerWeight())
-				m_weight_bits.Push(color.GetWeight(), color.GetBitsPerWeight(), append_voxel_count);
+			    std::min(voxel_count - i, ((macro_id + 1u) << kVoxelBitsPerMacroBlock) - voxel_index);
+
+			if (bits_per_weight)
+				push_weight_func(i, append_voxel_count);
 
 			i += append_voxel_count;
 		}
 
 		m_voxel_count += voxel_count;
 	}
+	inline void copy_voxels(uint32_t src_voxel_begin, uint32_t voxel_count) {
+		if (m_p_src->Empty()) {
+			append_voxels(VBRColor{}, voxel_count);
+			return;
+		}
+
+		auto [src_macro_id, src_block_id, src_block_offset] = m_p_src->get_voxel_index_info(src_voxel_begin);
+
+		for (uint32_t i = 0; i < voxel_count;) {
+			// Parameters for Copy
+			VBRBlockHeader src_block = m_p_src->m_block_headers[src_block_id];
+			uint32_t src_weight_base = m_p_src->m_macro_blocks[src_macro_id].weight_start +
+			                           src_block.GetWeightOffset() + src_block_offset * src_block.GetBitsPerWeight();
+
+			// Get Copy count, update Source info
+			uint32_t copy_voxel_count = voxel_count - i;
+			if (src_block_id + 1 < m_p_src->m_block_headers.size()) {
+				uint32_t next_block_offset = m_p_src->m_block_headers[src_block_id + 1].GetVoxelIndexOffset();
+				uint32_t src_macro_offset =
+				    m_p_src->m_block_headers[src_block_id].GetVoxelIndexOffset() + src_block_offset;
+
+				if (next_block_offset == 0) {
+					++src_macro_id;
+					copy_voxel_count = std::min(copy_voxel_count, kVoxelsPerMacroBlock - src_macro_offset);
+				} else
+					copy_voxel_count = std::min(copy_voxel_count, next_block_offset - src_macro_offset);
+
+				++src_block_id;
+				src_block_offset = 0u;
+			}
+			i += copy_voxel_count;
+
+			// Append colors in src_block
+			append(
+			    src_block.colors, src_block.GetBitsPerWeight(), copy_voxel_count, [&](uint32_t offset, uint32_t count) {
+				    m_weight_bits.Copy(m_p_src->m_weight_bits, src_weight_base + offset * src_block.GetBitsPerWeight(),
+				                       count * src_block.GetBitsPerWeight());
+			    });
+		}
+	}
+
+	inline void append_voxels(VBRColor color, uint32_t voxel_count) {
+		append(color.GetColors(), color.GetBitsPerWeight(), voxel_count,
+		       [this, color](uint32_t offset, uint32_t count) {
+			       m_weight_bits.Push(color.GetWeight(), color.GetBitsPerWeight(), count);
+		       });
+	}
 	inline void finalize() {
-		uint32_t full_voxel_count = 1u << (m_levels * 3);
+		uint32_t full_voxel_count = get_full_voxel_count();
 		if (m_voxel_count < full_voxel_count)
 			copy_voxels(m_voxel_count, full_voxel_count - m_voxel_count);
 	}
 
 public:
-	inline VBRColorBlockWriter(VBRColorBlock *p_color_block, uint32_t levels)
-	    : m_p_color_block{p_color_block}, m_levels{levels} {}
+	inline VBRColorBlockWriter(VBRColorBlock *p_src, uint32_t levels) : m_p_src{p_src}, m_levels{levels} {}
 	inline ~VBRColorBlockWriter() {
 		finalize();
-		m_p_color_block->m_macro_blocks = std::move(m_macro_blocks);
-		m_p_color_block->m_block_headers = std::move(m_block_headers);
-		m_p_color_block->m_weight_bits = std::move(m_weight_bits);
+		m_p_src->m_macro_blocks = std::move(m_macro_blocks);
+		m_p_src->m_block_headers = std::move(m_block_headers);
+		m_p_src->m_weight_bits = std::move(m_weight_bits);
+	}
+	template <std::unsigned_integral Word> inline void SetColor(const NodeCoord<Word> &coord, VBRColor color) {
+		uint32_t begin = VBRGetMortonIndex(coord.GetLowerBoundAtLevel(m_levels - 1)),
+		         end = VBRGetMortonIndex(coord.GetUpperBoundAtLevel(m_levels - 1) - glm::vec<3, Word>(1)) + 1u;
+		if (m_voxel_count < begin)
+			copy_voxels(m_voxel_count, begin - m_voxel_count);
+		append_voxels(color, end - begin);
 	}
 };
 

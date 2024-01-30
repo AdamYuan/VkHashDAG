@@ -8,7 +8,6 @@
 
 #include <concepts>
 #include <glm/glm.hpp>
-#include <libmorton/morton.h>
 
 namespace hashdag {
 
@@ -56,13 +55,6 @@ template <std::unsigned_integral Word> struct NodeCoord {
 		    .level = bits,
 		    .pos = pos & mask,
 		};
-	}
-
-	inline Word GetMortonIndex() const {
-		if constexpr (sizeof(Word) <= 4)
-			return libmorton::morton3D_32_encode(pos.x, pos.y, pos.z);
-		else
-			return libmorton::morton3D_64_encode(pos.x, pos.y, pos.z);
 	}
 
 	template <std::floating_point Float> inline constexpr glm::vec<3, Float> GetCenter() const {
