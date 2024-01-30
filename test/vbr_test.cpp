@@ -89,6 +89,8 @@ TEST_CASE("Test VBRColorBlock") {
 	hashdag::VBRColorBlock blk;
 	hashdag::R5G6B5Color r565{hashdag::RGBColor(1, 0, 0)}, g565{hashdag::RGBColor(0, 1, 0)},
 	    b565{hashdag::RGBColor(0, 0, 1)};
+
+	// Basic Appends
 	{
 		hashdag::VBRColorBlockWriter writer{&blk, kLevel};
 		writer.append_voxels(hashdag::VBRColor{r565, g565, 0b111, 3}, kR2);
@@ -109,5 +111,48 @@ TEST_CASE("Test VBRColorBlock") {
 		CHECK_EQ(blk.get_color(i + kR2 * 3).GetBitsPerWeight(), 1);
 		CHECK_EQ(blk.get_color(i + kR2 * 4).GetBitsPerWeight(), 0);
 		CHECK_EQ(blk.get_color(i + kR2 * 4).Get(), glm::vec3(1, 1, 1));
+	}
+
+	// Check Copy Equality
+	{
+		hashdag::VBRColorBlock blk2 = blk;
+		{ hashdag::VBRColorBlockWriter writer{&blk2, kLevel}; }
+		vector_cmp(blk2.m_block_headers, blk.m_block_headers);
+		vector_cmp(blk2.m_macro_blocks, blk.m_macro_blocks);
+		vector_cmp(blk2.m_weight_bits.GetData(), blk.m_weight_bits.GetData());
+	}
+
+	// Check Complex Copy
+	{
+		hashdag::VBRColorBlockWriter writer{&blk, kLevel};
+		writer.copy_voxels(0, 5 * kR2);
+		writer.append_voxels(hashdag::VBRColor{hashdag::RGB8Color{0x000000FFu}}, (kResolution - 10u) * kR2);
+		writer.copy_voxels(0, 5 * kR2);
+	}
+	CHECK_EQ(blk.m_weight_bits.Size(), (3 + 3 + 2 + 1) * kR2 * 2);
+	for (uint32_t i = 0; i < kR2; ++i) {
+		CHECK_EQ(blk.get_color(i).GetBitsPerWeight(), 3);
+		CHECK_EQ(blk.get_color(i).Get(), glm::vec3(0, 1, 0));
+		CHECK_EQ(blk.get_color(i + kR2).GetBitsPerWeight(), 3);
+		CHECK_EQ(blk.get_color(i + kR2).Get(), glm::vec3(1, 0, 0));
+		CHECK_EQ(blk.get_color(i + kR2 * 2).GetBitsPerWeight(), 2);
+		CHECK_EQ(blk.get_color(i + kR2 * 3).GetBitsPerWeight(), 1);
+		CHECK_EQ(blk.get_color(i + kR2 * 4).GetBitsPerWeight(), 0);
+		CHECK_EQ(blk.get_color(i + kR2 * 4).Get(), glm::vec3(1, 1, 1));
+	}
+	for (uint32_t i = 5; i < kResolution - 5; ++i) {
+		CHECK_EQ(blk.get_color(i * kR2).GetBitsPerWeight(), 0);
+		CHECK_EQ(blk.get_color(i * kR2).Get(), glm::vec3(1, 0, 0));
+	}
+	for (uint32_t i = 0; i < kR2; ++i) {
+		constexpr uint32_t kB = (kResolution - 5) * kR2;
+		CHECK_EQ(blk.get_color(kB + i).GetBitsPerWeight(), 3);
+		CHECK_EQ(blk.get_color(kB + i).Get(), glm::vec3(0, 1, 0));
+		CHECK_EQ(blk.get_color(kB + i + kR2).GetBitsPerWeight(), 3);
+		CHECK_EQ(blk.get_color(kB + i + kR2).Get(), glm::vec3(1, 0, 0));
+		CHECK_EQ(blk.get_color(kB + i + kR2 * 2).GetBitsPerWeight(), 2);
+		CHECK_EQ(blk.get_color(kB + i + kR2 * 3).GetBitsPerWeight(), 1);
+		CHECK_EQ(blk.get_color(kB + i + kR2 * 4).GetBitsPerWeight(), 0);
+		CHECK_EQ(blk.get_color(kB + i + kR2 * 4).Get(), glm::vec3(1, 1, 1));
 	}
 }

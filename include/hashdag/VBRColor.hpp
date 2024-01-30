@@ -46,6 +46,7 @@ public:
 struct VBRMacroBlock {
 	uint32_t first_block;
 	uint32_t weight_start;
+	auto operator<=>(const VBRMacroBlock &) const = default;
 };
 struct VBRBlockHeader {
 	uint32_t colors;
@@ -61,6 +62,7 @@ struct VBRBlockHeader {
 	inline VBRBlockHeader(uint32_t colors, uint32_t voxel_index_offset, uint32_t bits_per_weight,
 	                      uint32_t weight_offset)
 	    : colors{colors}, packed_14_2_16{(voxel_index_offset << 18u) | (bits_per_weight << 16u) | weight_offset} {}
+	auto operator<=>(const VBRBlockHeader &) const = default;
 };
 
 template <std::unsigned_integral Word> class VBRBitset {
