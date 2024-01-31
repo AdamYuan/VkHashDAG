@@ -196,6 +196,10 @@ public:
 		Word w1 = m_bits[(index >> kWordMaskBits) + 1] & ((Word(1) << (bits + offset - kWordBits)) - Word(1));
 		return w0 | (w1 << (kWordBits - offset));
 	}
+	inline void Clear() {
+		m_bit_count = 0;
+		m_bits.clear();
+	}
 };
 
 class VBRColorBlock {
@@ -250,6 +254,7 @@ private:
 	friend class VBRColorBlockWriter;
 
 public:
+	inline virtual ~VBRColorBlock() = default;
 	template <std::unsigned_integral Word> inline VBRColor GetColor(const NodeCoord<Word> &coord) const {
 		return get_color(VBRGetMortonIndex(coord.pos));
 	}
@@ -353,11 +358,19 @@ private:
 
 public:
 	inline VBRColorBlockWriter(VBRColorBlock *p_src, uint32_t levels) : m_p_src{p_src}, m_levels{levels} {}
-	inline ~VBRColorBlockWriter() {
+	inline ~VBRColorBlockWriter() override { Flush(); }
+	inline void Flush() {
+		if (Empty())
+			return;
+
 		finalize();
 		m_p_src->m_macro_blocks = std::move(m_macro_blocks);
 		m_p_src->m_block_headers = std::move(m_block_headers);
 		m_p_src->m_weight_bits = std::move(m_weight_bits);
+
+		m_macro_blocks.clear();
+		m_block_headers.clear();
+		m_weight_bits.Clear();
 	}
 	template <std::unsigned_integral Word> inline void SetColor(const NodeCoord<Word> &coord, VBRColor color) {
 		uint32_t begin = VBRGetMortonIndex(coord.GetLowerBoundAtLevel(m_levels - 1)),
@@ -367,6 +380,9 @@ public:
 		append_voxels(color, end - begin);
 	}
 };
+
+static_assert(ColorBlock<VBRColorBlock, uint32_t, VBRColor>);
+static_assert(ColorBlockWriter<VBRColorBlockWriter, uint32_t, VBRColor>);
 
 } // namespace hashdag
 

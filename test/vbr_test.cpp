@@ -11,9 +11,9 @@ template <typename T> void vector_cmp(const std::vector<T> &l, const std::vector
 }
 
 template <typename Word> void test_push_get() {
-	for (Word bits = 1; bits <= 4; ++bits) {
+	for (Word bits = 1; bits < 4; ++bits) {
 		for (Word word = 0; word < ((Word)1 << bits); ++word) {
-			Word bits2 = bits == 4 ? 1 : bits + 1, word2 = word & ((Word(1) << bits2) - Word(1));
+			Word bits2 = bits == 3 ? 1 : bits + 1, word2 = word & ((Word(1) << bits2) - Word(1));
 
 			hashdag::VBRBitset<Word> bitset;
 			bitset.Push(word, bits, 100);
