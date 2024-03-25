@@ -316,7 +316,7 @@ public:
 
 	template <bool ThreadSafe>
 	inline NodePointer<Word> edit_leaf(const Editor<Word> auto &editor, NodePointer<Word> leaf_ptr,
-	                                   const NodeCoord<Word> &coord) {
+	                                   const NodeCoord<Word> &coord, const auto *p_state) {
 		using LeafArray = std::array<Word, Config<Word>::kWordsPerLeaf>;
 
 		LeafArray leaf = get_leaf_array(leaf_ptr);
@@ -327,7 +327,7 @@ public:
 			constexpr Word kWordBits = std::countr_zero(sizeof(Word) * 8), kWordMask = (1u << kWordBits) - 1u;
 
 			bool voxel = (leaf[i >> kWordBits] >> (i & kWordMask)) & 1u;
-			bool new_voxel = editor.EditVoxel(coord.GetLeafCoord(i), voxel);
+			bool new_voxel = editor.EditVoxel(coord.GetLeafCoord(i), voxel, p_state);
 
 			changed |= new_voxel != voxel;
 			leaf[i >> kWordBits] ^= (Word(new_voxel != voxel) << (i & kWordMask));
@@ -340,8 +340,10 @@ public:
 
 	template <bool ThreadSafe>
 	inline NodePointer<Word> edit_node(const Editor<Word> auto &editor, NodePointer<Word> node_ptr,
-	                                   const NodeCoord<Word> &coord) {
-		switch (editor.EditNode(coord, node_ptr)) {
+	                                   const NodeCoord<Word> &coord, const auto *p_parent_state = nullptr) {
+		auto [edit_type, state] = editor.EditNode(coord, node_ptr, p_parent_state);
+
+		switch (edit_type) {
 		case EditType::kNotAffected:
 			return node_ptr;
 		case EditType::kClear:
@@ -352,7 +354,7 @@ public:
 		}
 
 		if (coord.level == m_config.GetNodeLevels() - 1)
-			return edit_leaf<ThreadSafe>(editor, node_ptr, coord);
+			return edit_leaf<ThreadSafe>(editor, node_ptr, coord, &state);
 
 		std::array<Word, 9> unpacked_node = get_unpacked_node_array(node_ptr);
 		Word &child_mask = unpacked_node[0];
@@ -362,7 +364,7 @@ public:
 
 		for (Word i = 0; i < 8; ++i) {
 			NodePointer<Word> child_ptr{children[i]};
-			NodePointer<Word> new_child_ptr = edit_node<ThreadSafe>(editor, child_ptr, coord.GetChildCoord(i));
+			NodePointer<Word> new_child_ptr = edit_node<ThreadSafe>(editor, child_ptr, coord.GetChildCoord(i), &state);
 
 			changed |= new_child_ptr != child_ptr;
 			children[i] = *new_child_ptr;

@@ -24,14 +24,14 @@ private:
 
 	template <lf::context Context>
 	inline lf::basic_task<void, Context> lf_edit_node(const Editor<Word> auto *p_editor, NodePointer<Word> *p_node_ptr,
-	                                                  NodeCoord<Word> coord, Word max_task_level) {
+	                                                  NodeCoord<Word> coord, auto state, Word max_task_level) {
 		NodePointer<Word> node_ptr = *p_node_ptr;
 		if (coord.level == get_node_pool().m_config.GetNodeLevels() - 1) {
-			*p_node_ptr = get_node_pool().template edit_leaf<true>(*p_editor, node_ptr, coord);
+			*p_node_ptr = get_node_pool().template edit_leaf<true>(*p_editor, node_ptr, coord, &state);
 			co_return;
 		}
 		if (coord.level >= max_task_level) {
-			*p_node_ptr = get_node_pool().template edit_node<true>(*p_editor, node_ptr, coord);
+			*p_node_ptr = get_node_pool().template edit_node<true>(*p_editor, node_ptr, coord, &state);
 			co_return;
 		}
 
@@ -47,13 +47,14 @@ private:
 #define CHILD(I, POST) \
 	do { \
 		NodeCoord<Word> child_coord = coord.GetChildCoord(I); \
-		EditType child_edit_type = p_editor->EditNode(child_coord, new_children[I]); \
+		auto [child_edit_type, child_state] = p_editor->EditNode(child_coord, new_children[I], &state); \
 		if (child_edit_type == EditType::kClear) \
 			new_children[I] = NodePointer<Word>::Null(); \
 		else if (child_edit_type == EditType::kFill) \
 			new_children[I] = get_node_pool().m_filled_node_pointers[child_coord.level]; \
 		else if (child_edit_type == EditType::kProceed) \
-			co_await lf_edit_node<Context>(p_editor, new_children.data() + I, child_coord, max_task_level) POST; \
+			co_await lf_edit_node<Context>(p_editor, new_children.data() + I, child_coord, std::move(child_state), \
+			                               max_task_level) POST; \
 	} while (0)
 
 		CHILD(0, .fork());
@@ -135,7 +136,7 @@ public:
 	                                      const Editor<Word> auto &editor, Word max_task_level = -1) {
 		get_node_pool().make_filled_node_pointers();
 
-		EditType edit_type = editor.EditNode({}, root_ptr);
+		auto [edit_type, state] = editor.EditNode({}, root_ptr, nullptr);
 		if (edit_type == EditType::kNotAffected)
 			return root_ptr;
 		if (edit_type == EditType::kClear)
@@ -143,8 +144,8 @@ public:
 		if (edit_type == EditType::kFill)
 			return get_node_pool().m_filled_node_pointers[0];
 
-		p_lf_pool->schedule(
-		    lf_edit_node<lf::busy_pool::context>(&editor, &root_ptr, NodeCoord<Word>{}, max_task_level));
+		p_lf_pool->schedule(lf_edit_node<lf::busy_pool::context>(&editor, &root_ptr, NodeCoord<Word>{},
+		                                                         std::move(state), max_task_level));
 		return root_ptr;
 	}
 

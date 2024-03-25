@@ -164,34 +164,38 @@ int main() {
 	                                                hashdag::Config<uint32_t>::MakeDefault(16, 9, 14, 2, 7, 11));
 
 	auto edit_ns = ns([&]() {
-		dag_node_pool->SetRoot(dag_node_pool->ThreadedEdit(&busy_pool, dag_node_pool->GetRoot(),
-		                                                   AABBEditor{
-		                                                       .level = dag_node_pool->GetConfig().GetLowestLevel(),
-		                                                       .aabb_min = {0, 0, 0},
-		                                                       .aabb_max = {5000, 5000, 5000},
-		                                                   },
-		                                                   10));
-		dag_node_pool->SetRoot(dag_node_pool->ThreadedEdit(&busy_pool, dag_node_pool->GetRoot(),
-		                                                   AABBEditor{
-		                                                       .level = dag_node_pool->GetConfig().GetLowestLevel(),
-		                                                       .aabb_min = {1001, 1000, 1000},
-		                                                       .aabb_max = {10000, 10000, 10000},
-		                                                   },
-		                                                   10));
-		dag_node_pool->SetRoot(dag_node_pool->ThreadedEdit(&busy_pool, dag_node_pool->GetRoot(),
-		                                                   SphereEditor<false>{
-		                                                       .level = dag_node_pool->GetConfig().GetLowestLevel(),
-		                                                       .center = {5005, 5000, 5000},
-		                                                       .r2 = 2000 * 2000,
-		                                                   },
-		                                                   10));
-		dag_node_pool->SetRoot(dag_node_pool->ThreadedEdit(&busy_pool, dag_node_pool->GetRoot(),
-		                                                   SphereEditor<false>{
-		                                                       .level = dag_node_pool->GetConfig().GetLowestLevel(),
-		                                                       .center = {10000, 10000, 10000},
-		                                                       .r2 = 4000 * 4000,
-		                                                   },
-		                                                   10));
+		dag_node_pool->SetRoot(
+		    dag_node_pool->ThreadedEdit(&busy_pool, dag_node_pool->GetRoot(),
+		                                hashdag::StatelessEditorWrapper<uint32_t, AABBEditor>{AABBEditor{
+		                                    .level = dag_node_pool->GetConfig().GetLowestLevel(),
+		                                    .aabb_min = {0, 0, 0},
+		                                    .aabb_max = {5000, 5000, 5000},
+		                                }},
+		                                10));
+		dag_node_pool->SetRoot(
+		    dag_node_pool->ThreadedEdit(&busy_pool, dag_node_pool->GetRoot(),
+		                                hashdag::StatelessEditorWrapper<uint32_t, AABBEditor>{AABBEditor{
+		                                    .level = dag_node_pool->GetConfig().GetLowestLevel(),
+		                                    .aabb_min = {1001, 1000, 1000},
+		                                    .aabb_max = {10000, 10000, 10000},
+		                                }},
+		                                10));
+		dag_node_pool->SetRoot(dag_node_pool->ThreadedEdit(
+		    &busy_pool, dag_node_pool->GetRoot(),
+		    hashdag::StatelessEditorWrapper<uint32_t, SphereEditor<false>>{SphereEditor<false>{
+		        .level = dag_node_pool->GetConfig().GetLowestLevel(),
+		        .center = {5005, 5000, 5000},
+		        .r2 = 2000 * 2000,
+		    }},
+		    10));
+		dag_node_pool->SetRoot(dag_node_pool->ThreadedEdit(
+		    &busy_pool, dag_node_pool->GetRoot(),
+		    hashdag::StatelessEditorWrapper<uint32_t, SphereEditor<false>>{SphereEditor<false>{
+		        .level = dag_node_pool->GetConfig().GetLowestLevel(),
+		        .center = {10000, 10000, 10000},
+		        .r2 = 4000 * 4000,
+		    }},
+		    10));
 	});
 	printf("edit cost %lf ms\n", (double)edit_ns / 1000000.0);
 	auto flush_ns = ns([&]() {
@@ -258,17 +262,17 @@ int main() {
 				auto r2 = uint64_t(edit_radius * edit_radius);
 
 				if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
-					push_edit(SphereEditor<false>{
+					push_edit(hashdag::StatelessEditorWrapper<uint32_t, SphereEditor<false>>{SphereEditor<false>{
 					    .level = dag_node_pool->GetConfig().GetLowestLevel(),
 					    .center = up,
 					    .r2 = r2,
-					});
+					}});
 				} else if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
-					push_edit(SphereEditor{
+					push_edit(hashdag::StatelessEditorWrapper<uint32_t, SphereEditor<>>{SphereEditor{
 					    .level = dag_node_pool->GetConfig().GetLowestLevel(),
 					    .center = up,
 					    .r2 = r2,
-					});
+					}});
 				}
 				// printf("%f %f %f\n", p->x, p->y, p->z);
 			}
