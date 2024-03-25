@@ -1,5 +1,8 @@
 #include "myvk/Device.hpp"
 #include "myvk/Queue.hpp"
+#include <algorithm>
+#include <myvk/Allocator.hpp>
+#include <ranges>
 #include <set>
 
 namespace myvk {
@@ -22,6 +25,8 @@ Device::~Device() {
 		vkDestroyPipelineCache(m_device, m_pipeline_cache, nullptr);
 	if (m_allocator)
 		vmaDestroyAllocator(m_allocator);
+	if (m_dev_addr_allocator)
+		vmaDestroyAllocator(m_dev_addr_allocator);
 	if (m_device)
 		vkDestroyDevice(m_device, nullptr);
 }
@@ -42,7 +47,12 @@ Ptr<Device> Device::Create(const Ptr<PhysicalDevice> &physical_device, const Que
 	if (ret->create_device(queue_create_infos, extensions, features) != VK_SUCCESS)
 		return nullptr;
 	volkLoadDevice(ret->m_device);
-	if (ret->create_allocator() != VK_SUCCESS)
+
+	ret->m_allocator = Allocator::CreateHandle(ret, {});
+	if (ret->m_allocator == VK_NULL_HANDLE)
+		return nullptr;
+	ret->m_dev_addr_allocator = Allocator::CreateHandle(ret, {.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT});
+	if (ret->m_dev_addr_allocator == VK_NULL_HANDLE)
 		return nullptr;
 	if (ret->create_pipeline_cache() != VK_SUCCESS)
 		return nullptr;
@@ -65,60 +75,6 @@ VkResult Device::create_device(const std::vector<VkDeviceQueueCreateInfo> &queue
 	create_info.pNext = &features.vk11;
 
 	return vkCreateDevice(m_physical_device_ptr->GetHandle(), &create_info, nullptr, &m_device);
-}
-
-VkResult Device::create_allocator() {
-	VmaVulkanFunctions vk_funcs = {
-		/// Required when using VMA_DYNAMIC_VULKAN_FUNCTIONS.
-		vkGetInstanceProcAddr,
-		/// Required when using VMA_DYNAMIC_VULKAN_FUNCTIONS.
-		vkGetDeviceProcAddr,
-		vkGetPhysicalDeviceProperties,
-		vkGetPhysicalDeviceMemoryProperties,
-		vkAllocateMemory,
-		vkFreeMemory,
-		vkMapMemory,
-		vkUnmapMemory,
-		vkFlushMappedMemoryRanges,
-		vkInvalidateMappedMemoryRanges,
-		vkBindBufferMemory,
-		vkBindImageMemory,
-		vkGetBufferMemoryRequirements,
-		vkGetImageMemoryRequirements,
-		vkCreateBuffer,
-		vkDestroyBuffer,
-		vkCreateImage,
-		vkDestroyImage,
-		vkCmdCopyBuffer,
-#if VMA_DEDICATED_ALLOCATION || VMA_VULKAN_VERSION >= 1001000
-		/// Fetch "vkGetBufferMemoryRequirements2" on Vulkan >= 1.1, fetch "vkGetBufferMemoryRequirements2KHR" when
-		/// using
-		/// VK_KHR_dedicated_allocation extension.
-		vkGetBufferMemoryRequirements2KHR,
-		/// Fetch "vkGetImageMemoryRequirements 2" on Vulkan >= 1.1, fetch "vkGetImageMemoryRequirements2KHR" when using
-		/// VK_KHR_dedicated_allocation extension.
-		vkGetImageMemoryRequirements2KHR,
-#endif
-#if VMA_BIND_MEMORY2 || VMA_VULKAN_VERSION >= 1001000
-		/// Fetch "vkBindBufferMemory2" on Vulkan >= 1.1, fetch "vkBindBufferMemory2KHR" when using VK_KHR_bind_memory2
-		/// extension.
-		vkBindBufferMemory2KHR,
-		/// Fetch "vkBindImageMemory2" on Vulkan >= 1.1, fetch "vkBindImageMemory2KHR" when using VK_KHR_bind_memory2
-		/// extension.
-		vkBindImageMemory2KHR,
-#endif
-#if VMA_MEMORY_BUDGET || VMA_VULKAN_VERSION >= 1001000
-		vkGetPhysicalDeviceMemoryProperties2KHR,
-#endif
-	};
-
-	VmaAllocatorCreateInfo create_info = {};
-	create_info.instance = m_physical_device_ptr->GetInstancePtr()->GetHandle();
-	create_info.device = m_device;
-	create_info.physicalDevice = m_physical_device_ptr->GetHandle();
-	create_info.pVulkanFunctions = &vk_funcs;
-
-	return vmaCreateAllocator(&create_info, &m_allocator);
 }
 
 VkResult Device::create_pipeline_cache() {

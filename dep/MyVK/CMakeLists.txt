@@ -1,8 +1,6 @@
 cmake_minimum_required(VERSION 3.15)
 project(MyVK)
 
-option(MYVK_TESTING "Testing" ON)
-
 set(CMAKE_CXX_STANDARD 20)
 
 add_subdirectory(dep)
@@ -37,10 +35,36 @@ add_library(MyVK_Vulkan STATIC
         src/QueryPool.cpp
         src/FramebufferBase.cpp
         src/ImagelessFramebuffer.cpp
-        )
+        src/Allocator.cpp
+        src/AccelerationStructure.cpp
+)
 add_library(myvk::vulkan ALIAS MyVK_Vulkan)
 target_include_directories(MyVK_Vulkan PUBLIC include)
 target_link_libraries(MyVK_Vulkan PUBLIC MyVK_Dep_Vulkan)
+
+add_library(MyVK_RenderGraph STATIC
+        src/rg/interface/Alias.cpp
+        src/rg/interface/Resource.cpp
+        src/rg/interface/Pass.cpp
+        src/rg/interface/Input.cpp
+        src/rg/interface/Object.cpp
+
+        src/rg/executor/default/Executor.cpp
+        src/rg/executor/default/Collection.cpp
+        src/rg/executor/default/Dependency.cpp
+        src/rg/executor/default/Metadata.cpp
+        src/rg/executor/default/VkAllocation.cpp
+        src/rg/executor/default/Schedule.cpp
+        src/rg/executor/default/VkCommand.cpp
+        src/rg/executor/default/VkDescriptor.cpp
+        src/rg/executor/default/VkRunner.cpp
+)
+add_library(myvk::rg ALIAS MyVK_RenderGraph)
+target_compile_definitions(MyVK_RenderGraph PUBLIC MYVK_ENABLE_RG)
+target_link_libraries(MyVK_RenderGraph PUBLIC MyVK_Vulkan)
+if (MYVK_TESTING)
+    target_compile_definitions(MyVK_RenderGraph PUBLIC MYVK_RG_DEBUG)
+endif ()
 
 add_library(MyVK_GLFW STATIC
         src/glfw/Surface.cpp
@@ -51,7 +75,7 @@ add_library(MyVK_GLFW STATIC
         src/glfw/PhysicalDevice.cpp
         src/glfw/ImageView.cpp
         src/glfw/QueueSelector.cpp
-        )
+)
 add_library(myvk::glfw ALIAS MyVK_GLFW)
 target_compile_definitions(MyVK_GLFW PUBLIC MYVK_ENABLE_GLFW)
 target_link_libraries(MyVK_GLFW PUBLIC MyVK_Vulkan MyVK_Dep_GLFW)
@@ -59,7 +83,7 @@ target_link_libraries(MyVK_GLFW PUBLIC MyVK_Vulkan MyVK_Dep_GLFW)
 add_library(MyVK_ImGui STATIC
         src/imgui/ImGuiHelper.cpp
         src/imgui/ImGuiRenderer.cpp
-        )
+)
 add_library(myvk::imgui ALIAS MyVK_ImGui)
 target_compile_definitions(MyVK_ImGui PUBLIC MYVK_ENABLE_IMGUI)
 target_link_libraries(MyVK_ImGui PUBLIC MyVK_Vulkan MyVK_GLFW MyVK_Dep_ImGui)

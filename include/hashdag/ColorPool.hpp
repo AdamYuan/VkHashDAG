@@ -12,8 +12,8 @@ namespace hashdag {
 
 template <typename T, typename Word, typename ColorBlock, typename ColorBlockWriter>
 concept ColorPool = requires(T p, const T cp) {
-	{ cp.GetBlock(NodeCoord<Word>{}) } -> std::convertible_to<const ColorBlock &>;
-	{ p.WriteBlock(NodeCoord<Word>{}) } -> std::convertible_to<ColorBlockWriter &>;
+	{ cp.ReadBlock(NodeCoord<Word>{}) } -> std::convertible_to<const ColorBlock *>;
+	{ p.WriteBlock(NodeCoord<Word>{}) } -> std::convertible_to<ColorBlockWriter>;
 	p.FreeBlock(NodeCoord<Word>{});
 };
 
