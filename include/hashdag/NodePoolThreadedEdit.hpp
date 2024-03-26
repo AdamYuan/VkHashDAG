@@ -17,21 +17,23 @@ namespace hashdag {
 
 template <typename Derived, std::unsigned_integral Word> class NodePoolThreadedEdit {
 private:
-	inline const auto &get_node_pool() const {
+	inline const NodePoolBase<Derived, Word> &get_node_pool() const {
 		return *static_cast<const NodePoolBase<Derived, Word> *>(static_cast<const Derived *>(this));
 	}
-	inline auto &get_node_pool() { return *static_cast<NodePoolBase<Derived, Word> *>(static_cast<Derived *>(this)); }
+	inline NodePoolBase<Derived, Word> &get_node_pool() {
+		return *static_cast<NodePoolBase<Derived, Word> *>(static_cast<Derived *>(this));
+	}
 
-	template <lf::context Context>
-	inline lf::basic_task<void, Context> lf_edit_node(const Editor<Word> auto *p_editor, NodePointer<Word> *p_node_ptr,
-	                                                  NodeCoord<Word> coord, auto state, Word max_task_level) {
+	template <lf::context Context, Editor<Word> Editor_T>
+	inline lf::basic_task<void, Context> lf_edit_node(const Editor_T *p_editor, NodePointer<Word> *p_node_ptr,
+	                                                  NodeCoord<Word> coord, auto *p_state, Word max_task_level) {
 		NodePointer<Word> node_ptr = *p_node_ptr;
 		if (coord.level == get_node_pool().m_config.GetNodeLevels() - 1) {
-			*p_node_ptr = get_node_pool().template edit_leaf<true>(*p_editor, node_ptr, coord, &state);
+			*p_node_ptr = get_node_pool().template edit_leaf<true>(*p_editor, node_ptr, coord, p_state);
 			co_return;
 		}
 		if (coord.level >= max_task_level) {
-			*p_node_ptr = get_node_pool().template edit_node<true>(*p_editor, node_ptr, coord, &state);
+			*p_node_ptr = get_node_pool().template edit_node<true>(*p_editor, node_ptr, coord, p_state);
 			co_return;
 		}
 
@@ -41,33 +43,45 @@ private:
 		std::span<Word, 8> children = std::span<Word, 9>{unpacked_node}.template subspan<1>();
 
 		std::array<NodePointer<Word>, 8> new_children;
-		for (Word i = 0; i < 8; ++i)
-			new_children[i] = children[i];
+		std::array<typename Editor_T::NodeState, 8> child_states;
 
-#define CHILD(I, POST) \
-	do { \
-		NodeCoord<Word> child_coord = coord.GetChildCoord(I); \
-		auto [child_edit_type, child_state] = p_editor->EditNode(child_coord, new_children[I], &state); \
-		if (child_edit_type == EditType::kClear) \
-			new_children[I] = NodePointer<Word>::Null(); \
-		else if (child_edit_type == EditType::kFill) \
-			new_children[I] = get_node_pool().m_filled_node_pointers[child_coord.level]; \
-		else if (child_edit_type == EditType::kProceed) \
-			co_await lf_edit_node<Context>(p_editor, new_children.data() + I, child_coord, std::move(child_state), \
-			                               max_task_level) POST; \
-	} while (0)
+		Word fork_count = 0;
+		std::array<Word, 8> fork_indices;
 
-		CHILD(0, .fork());
-		CHILD(1, .fork());
-		CHILD(2, .fork());
-		CHILD(3, .fork());
-		CHILD(4, .fork());
-		CHILD(5, .fork());
-		CHILD(6, .fork());
-		CHILD(7, );
+		for (Word i = 0; i < 8; ++i) {
+			NodePointer<Word> child_ptr{children[i]};
+			NodeCoord<Word> child_coord = coord.GetChildCoord(i);
+			get_node_pool().edit_switch(
+			    *p_editor, child_ptr, child_coord, p_state,
+			    [&](typename Editor_T::NodeState &&child_state, NodePointer<Word> new_child_ptr) {
+				    child_states[i] = std::move(child_state);
+				    new_children[i] = new_child_ptr;
+			    },
+			    [&](typename Editor_T::NodeState &&child_state) {
+				    child_states[i] = std::move(child_state);
+				    fork_indices[fork_count++] = i;
+			    });
+		}
 
-#undef CHILD
+		// Fork
+		for (Word count = 0; Word i : std::span{fork_indices.data(), fork_count}) {
+			++count;
+			NodePointer<Word> child_ptr{children[i]};
+			NodeCoord<Word> child_coord = coord.GetChildCoord(i);
+			auto &child_state = child_states[i];
+
+			new_children[i] = child_ptr;
+			if (count == fork_count)
+				co_await lf_edit_node<Context>(p_editor, new_children.data() + i, child_coord, &child_state,
+				                               max_task_level);
+			else
+				co_await lf_edit_node<Context>(p_editor, new_children.data() + i, child_coord, &child_state,
+				                               max_task_level)
+				    .fork();
+		}
 		co_await lf::join();
+
+		p_editor->JoinNode(coord, p_state, child_states);
 
 		bool changed = false;
 		for (Word i = 0; i < 8; ++i) {
@@ -86,78 +100,24 @@ private:
 			                  : NodePointer<Word>::Null();
 		co_return;
 	}
-	/* template <lf::context Context>
-	inline lf::basic_task<void, Context> lf_iterate_node(Iterator<Word> auto *p_iterator, NodePointer<Word> node_ptr,
-	                                                     NodeCoord<Word> coord, Word max_task_level) const {
-	    if (coord.level == get_node_pool().m_config.GetNodeLevels() - 1) {
-	        get_node_pool().iterate_leaf(p_iterator, node_ptr, coord);
-	        co_return;
-	    }
-	    if (coord.level >= max_task_level) {
-	        get_node_pool().iterate_node(p_iterator, node_ptr, coord);
-	        co_return;
-	    }
-
-	    Word child_mask = 0;
-	    const Word *p_next_child = nullptr;
-
-	    if (node_ptr) {
-	        const Word *p_node = get_node_pool().read_node(*node_ptr);
-	        child_mask = *p_node;
-	        p_next_child = p_node + 1;
-	    }
-
-#define CHILD(I, POST) \
-	do { \
-	    NodeCoord<Word> child_coord = coord.GetChildCoord(I); \
-	    NodePointer<Word> child_ptr = \
-	        ((child_mask >> I) & 1u) ? NodePointer<Word>{*(p_next_child++)} : NodePointer<Word>::Null(); \
-	    if (p_iterator->IterateNode(child_coord, child_ptr) != IterateType::kStop) \
-	        co_await lf_iterate_node<Context>(p_iterator, child_ptr, child_coord, max_task_level) POST; \
-	} while (0)
-
-	    CHILD(0, .fork());
-	    CHILD(1, .fork());
-	    CHILD(2, .fork());
-	    CHILD(3, .fork());
-	    CHILD(4, .fork());
-	    CHILD(5, .fork());
-	    CHILD(6, .fork());
-	    CHILD(7, );
-
-#undef CHILD
-	    co_await lf::join();
-	} */
 
 public:
 	inline NodePoolThreadedEdit() { static_assert(std::is_base_of_v<NodePoolBase<Derived, Word>, Derived>); }
 
-	inline NodePointer<Word> ThreadedEdit(lf::busy_pool *p_lf_pool, NodePointer<Word> root_ptr,
-	                                      const Editor<Word> auto &editor, Word max_task_level = -1) {
+	template <Editor<Word> Editor_T>
+	inline NodePointer<Word> ThreadedEdit(lf::busy_pool *p_lf_pool, NodePointer<Word> root_ptr, const Editor_T &editor,
+	                                      Word max_task_level = -1) {
 		get_node_pool().make_filled_node_pointers();
 
-		auto [edit_type, state] = editor.EditNode({}, root_ptr, nullptr);
-		if (edit_type == EditType::kNotAffected)
-			return root_ptr;
-		if (edit_type == EditType::kClear)
-			return NodePointer<Word>::Null();
-		if (edit_type == EditType::kFill)
-			return get_node_pool().m_filled_node_pointers[0];
-
-		p_lf_pool->schedule(lf_edit_node<lf::busy_pool::context>(&editor, &root_ptr, NodeCoord<Word>{},
-		                                                         std::move(state), max_task_level));
-		return root_ptr;
+		return get_node_pool().template edit_switch<Editor_T>(
+		    editor, root_ptr, {}, (const typename Editor_T::NodeState *)nullptr,
+		    [&](typename Editor_T::NodeState &&state, NodePointer<Word> new_root_ptr) { return new_root_ptr; },
+		    [&](typename Editor_T::NodeState &&state) {
+			    p_lf_pool->schedule(lf_edit_node<lf::busy_pool::context>(&editor, &root_ptr, NodeCoord<Word>{}, &state,
+			                                                             max_task_level));
+			    return root_ptr;
+		    });
 	}
-
-	/* inline void IterateLibFork(lf::busy_pool *p_lf_pool, NodePointer<Word> root_ptr, Iterator<Word> auto *p_iterator,
-	                           Word max_task_level = -1) {
-	    get_node_pool().make_filled_node_pointers();
-
-	    if (p_iterator->IterateNode({}, root_ptr) == IterateType::kStop)
-	        return;
-	    p_lf_pool->schedule(
-	        lf_iterate_node<lf::busy_pool::context>(p_iterator, root_ptr, NodeCoord<Word>{}, max_task_level));
-	} */
 };
 
 } // namespace hashdag
