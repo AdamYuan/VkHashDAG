@@ -64,22 +64,24 @@ private:
 		}
 
 		// Fork
-		for (Word count = 0; Word i : std::span{fork_indices.data(), fork_count}) {
-			++count;
-			NodePointer<Word> child_ptr{children[i]};
-			NodeCoord<Word> child_coord = coord.GetChildCoord(i);
-			auto &child_state = child_states[i];
+		if (fork_count) {
+			for (Word count = 0; Word i : std::span{fork_indices.data(), fork_count}) {
+				++count;
+				NodePointer<Word> child_ptr{children[i]};
+				NodeCoord<Word> child_coord = coord.GetChildCoord(i);
+				auto &child_state = child_states[i];
 
-			new_children[i] = child_ptr;
-			if (count == fork_count)
-				co_await lf_edit_node<Context>(p_editor, new_children.data() + i, child_coord, &child_state,
-				                               max_task_level);
-			else
-				co_await lf_edit_node<Context>(p_editor, new_children.data() + i, child_coord, &child_state,
-				                               max_task_level)
-				    .fork();
+				new_children[i] = child_ptr;
+				if (count == fork_count)
+					co_await lf_edit_node<Context>(p_editor, new_children.data() + i, child_coord, &child_state,
+					                               max_task_level);
+				else
+					co_await lf_edit_node<Context>(p_editor, new_children.data() + i, child_coord, &child_state,
+					                               max_task_level)
+					    .fork();
+			}
+			co_await lf::join();
 		}
-		co_await lf::join();
 
 		p_editor->JoinNode(coord, p_state, child_states);
 
