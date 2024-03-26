@@ -441,8 +441,9 @@ public:
 	template <Editor<Word> Editor_T> inline NodePointer<Word> Edit(NodePointer<Word> root_ptr, const Editor_T &editor) {
 		make_filled_node_pointers();
 		return edit_switch(
-		    editor, root_ptr, {}, nullptr, [&](auto &&state, NodePointer<Word> new_root_ptr) { return new_root_ptr; },
-		    [&](auto &&state) { return edit_node<false>(editor, root_ptr, {}, &state); });
+		    editor, root_ptr, {}, (const typename Editor_T::NodeState *)nullptr,
+		    [&](typename Editor_T::NodeState &&state, NodePointer<Word> new_root_ptr) { return new_root_ptr; },
+		    [&](typename Editor_T::NodeState &&state) { return edit_node<false>(editor, root_ptr, {}, &state); });
 	}
 	inline void Iterate(NodePointer<Word> root_ptr, Iterator<Word> auto *p_iterator) const {
 		iterate_node(p_iterator, root_ptr, {});
