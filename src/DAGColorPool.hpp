@@ -6,7 +6,6 @@
 #ifndef VKHASHDAG_DAGCOLORPOOL_HPP
 #define VKHASHDAG_DAGCOLORPOOL_HPP
 
-#include <hashdag/ColorPool.hpp>
 #include <hashdag/VBRColor.hpp>
 
 #include <array>

@@ -7,7 +7,7 @@
 #define VKHASHDAG_VBRCOLOR_HPP
 
 #include "Color.hpp"
-#include "ColorBlock.hpp"
+#include "NodeCoord.hpp"
 
 #include <algorithm>
 #include <libmorton/morton.h>
@@ -238,26 +238,26 @@ private:
 		return {macro_id, block_id, block_offset};
 	}
 
-	inline VBRColor get_color(uint32_t voxel_index) const {
-		auto [macro_id, block_id, block_offset] = get_voxel_index_info(voxel_index);
-		VBRBlockHeader block = m_block_headers[block_id];
-		uint32_t weight_bits = block.GetBitsPerWeight();
-		if (weight_bits == 0)
-			return {RGB8Color(block.colors)};
+	/* inline VBRColor get_color(uint32_t voxel_index) const {
+	    auto [macro_id, block_id, block_offset] = get_voxel_index_info(voxel_index);
+	    VBRBlockHeader block = m_block_headers[block_id];
+	    uint32_t weight_bits = block.GetBitsPerWeight();
+	    if (weight_bits == 0)
+	        return {RGB8Color(block.colors)};
 
-		uint32_t weight_index =
-		    m_macro_blocks[macro_id].weight_start + block.GetWeightOffset() + block_offset * weight_bits;
-		return VBRColor{R5G6B5Color(block.colors), R5G6B5Color(block.colors >> 16u),
-		                (uint8_t)m_weight_bits.Get(weight_index, weight_bits), (uint8_t)weight_bits};
-	}
+	    uint32_t weight_index =
+	        m_macro_blocks[macro_id].weight_start + block.GetWeightOffset() + block_offset * weight_bits;
+	    return VBRColor{R5G6B5Color(block.colors), R5G6B5Color(block.colors >> 16u),
+	                    (uint8_t)m_weight_bits.Get(weight_index, weight_bits), (uint8_t)weight_bits};
+	} */
 
 	friend class VBRColorBlockWriter;
 
 public:
 	inline virtual ~VBRColorBlock() = default;
-	template <std::unsigned_integral Word> inline VBRColor GetColor(const NodeCoord<Word> &coord) const {
-		return get_color(VBRGetMortonIndex(coord.pos));
-	}
+	/* template <std::unsigned_integral Word> inline VBRColor GetColor(const NodeCoord<Word> &coord) const {
+	    return get_color(VBRGetMortonIndex(coord.pos));
+	} */
 	inline bool Empty() const { return m_macro_blocks.empty(); }
 };
 
@@ -372,7 +372,7 @@ public:
 		m_block_headers.clear();
 		m_weight_bits.Clear();
 	}
-	template <std::unsigned_integral Word> inline void SetColor(const NodeCoord<Word> &coord, VBRColor color) {
+	template <std::unsigned_integral Word> inline void SetNextColor(const NodeCoord<Word> &coord, VBRColor color) {
 		uint32_t begin = VBRGetMortonIndex(coord.GetLowerBoundAtLevel(m_levels - 1)),
 		         end = VBRGetMortonIndex(coord.GetUpperBoundAtLevel(m_levels - 1) - glm::vec<3, Word>(1)) + 1u;
 		if (m_voxel_count < begin)
@@ -380,9 +380,6 @@ public:
 		append_voxels(color, end - begin);
 	}
 };
-
-static_assert(ColorBlock<VBRColorBlock, uint32_t, VBRColor>);
-static_assert(ColorBlockWriter<VBRColorBlockWriter, uint32_t, VBRColor>);
 
 } // namespace hashdag
 
