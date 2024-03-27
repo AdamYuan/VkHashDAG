@@ -29,7 +29,7 @@ concept NodePool = Hasher<typename T::WordSpanHasher, Word> && requires(T e, con
 
 	{ ce.GetBucketWords(Word{} /* Bucket Index */) } -> std::convertible_to<Word>;
 	e.SetBucketWords(Word{} /* Bucket Index */, Word{} /* Words */);
-};
+} && std::unsigned_integral<Word>;
 
 template <typename T, typename Word>
 concept ThreadedNodePool = NodePool<T, Word> && requires(T e, const T ce) {
@@ -332,6 +332,8 @@ public:
 			changed |= new_voxel != voxel;
 			leaf[i >> kWordBits] ^= (Word(new_voxel != voxel) << (i & kWordMask));
 		}
+
+		editor.JoinLeaf(coord, p_state);
 
 		return changed ? (leaf == LeafArray{0} ? NodePointer<Word>::Null()
 		                                       : upsert_leaf<ThreadSafe>(coord.level, leaf, leaf_ptr))

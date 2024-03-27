@@ -261,6 +261,22 @@ public:
 	inline bool Empty() const { return m_macro_blocks.empty(); }
 };
 
+// TODO: Read one-by-one
+/* class VBRColorBlockReader {
+#ifdef HASHDAG_TEST
+	public:
+#else
+private:
+#endif
+	VBRColorBlock *m_p_src;
+	uint32_t m_levels, m_voxel_index = 0;
+
+public:
+	inline VBRColorBlockReader(VBRColorBlock *p_src, uint32_t levels) : m_p_src{p_src}, m_levels{levels} {
+
+	}
+}; */
+
 class VBRColorBlockWriter final : public VBRColorBlock {
 #ifdef HASHDAG_TEST
 public:

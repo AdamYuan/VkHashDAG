@@ -27,6 +27,8 @@ template <std::unsigned_integral Word> struct NodeCoord {
 		};
 	}
 
+	inline constexpr Word GetChildIndex() const { return (pos.x & 1u) | ((pos.y & 1u) << 1u) | ((pos.z & 1u) << 2u); }
+
 	inline constexpr NodeCoord GetLeafCoord(Word leaf_index) const {
 		// return GetChildCoord(leaf_index >> 3u).GetChildCoord(leaf_index & 7u);
 		return {

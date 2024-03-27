@@ -12,11 +12,6 @@
 
 namespace hashdag {
 
-/* template <typename T>
-concept Color = requires(const T cc) {
-    { cc.GetData() } -> std::convertible_to<typename T::DataType>;
-}; */
-
 using RGBColor = glm::vec3;
 
 class RGB8Color {
