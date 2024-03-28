@@ -43,7 +43,7 @@ private:
 		std::span<Word, 8> children = std::span<Word, 9>{unpacked_node}.template subspan<1>();
 
 		std::array<NodePointer<Word>, 8> new_children;
-		std::array<typename Editor_T::NodeState, 8> child_states;
+		std::array<typename Editor_T::NodeState, 8> child_states{};
 
 		Word fork_count = 0;
 		std::array<Word, 8> fork_indices;
@@ -51,16 +51,11 @@ private:
 		for (Word i = 0; i < 8; ++i) {
 			NodePointer<Word> child_ptr{children[i]};
 			NodeCoord<Word> child_coord = coord.GetChildCoord(i);
+			auto &child_state = child_states[i];
 			get_node_pool().edit_switch(
-			    *p_editor, child_ptr, child_coord, p_state,
-			    [&](typename Editor_T::NodeState &&child_state, NodePointer<Word> new_child_ptr) {
-				    child_states[i] = std::move(child_state);
-				    new_children[i] = new_child_ptr;
-			    },
-			    [&](typename Editor_T::NodeState &&child_state) {
-				    child_states[i] = std::move(child_state);
-				    fork_indices[fork_count++] = i;
-			    });
+			    *p_editor, child_ptr, child_coord, &child_state, p_state,
+			    [&](NodePointer<Word> new_child_ptr) { new_children[i] = new_child_ptr; },
+			    [&]() { fork_indices[fork_count++] = i; });
 		}
 
 		// Fork
@@ -111,10 +106,11 @@ public:
 	                                      Word max_task_level = -1) {
 		get_node_pool().make_filled_node_pointers();
 
+		typename Editor_T::NodeState state{};
 		return get_node_pool().template edit_switch<Editor_T>(
-		    editor, root_ptr, {}, (const typename Editor_T::NodeState *)nullptr,
-		    [&](typename Editor_T::NodeState &&state, NodePointer<Word> new_root_ptr) { return new_root_ptr; },
-		    [&](typename Editor_T::NodeState &&state) {
+		    editor, root_ptr, {}, &state, (const typename Editor_T::NodeState *)nullptr,
+		    [&](NodePointer<Word> new_root_ptr) { return new_root_ptr; },
+		    [&]() {
 			    p_lf_pool->schedule(lf_edit_node<lf::busy_pool::context>(&editor, &root_ptr, NodeCoord<Word>{}, &state,
 			                                                             max_task_level));
 			    return root_ptr;

@@ -342,17 +342,18 @@ public:
 
 	template <Editor<Word> Editor_T>
 	inline auto edit_switch(const Editor_T &editor, NodePointer<Word> node_ptr, const NodeCoord<Word> &coord,
-	                        const auto *p_parent_state, auto &&edit_terminate_func, auto &&edit_proceed_func) const {
-		auto [edit_type, state] = editor.EditNode(coord, node_ptr, p_parent_state);
+	                        auto *p_state, const auto *p_parent_state, auto &&edit_terminate_func,
+	                        auto &&edit_proceed_func) const {
+		auto edit_type = editor.EditNode(coord, node_ptr, p_state, p_parent_state);
 		if (edit_type == EditType::kClear)
-			return edit_terminate_func(std::move(state), NodePointer<Word>::Null());
+			return edit_terminate_func(NodePointer<Word>::Null());
 		else if (edit_type == EditType::kFill)
-			return edit_terminate_func(std::move(state), m_filled_node_pointers[coord.level]);
+			return edit_terminate_func(m_filled_node_pointers[coord.level]);
 		else if (edit_type == EditType::kNotAffected)
-			return edit_terminate_func(std::move(state), node_ptr);
+			return edit_terminate_func(node_ptr);
 		else {
 			// kProceed
-			return edit_proceed_func(std::move(state));
+			return edit_proceed_func();
 		}
 	}
 
@@ -365,23 +366,18 @@ public:
 		std::array<Word, 9> unpacked_node = get_unpacked_node_array(node_ptr);
 		Word &child_mask = unpacked_node[0];
 		std::span<Word, 8> children = std::span<Word, 9>{unpacked_node}.template subspan<1>();
-		std::array<typename Editor_T::NodeState, 8> child_states;
+		std::array<typename Editor_T::NodeState, 8> child_states{};
 
 		bool changed = false;
 
 		for (Word i = 0; i < 8; ++i) {
 			NodeCoord<Word> child_coord = coord.GetChildCoord(i);
 			NodePointer<Word> child_ptr{children[i]};
+			auto &child_state = child_states[i];
 			NodePointer<Word> new_child_ptr = edit_switch(
-			    editor, child_ptr, child_coord, p_state,
-			    [&](typename Editor_T::NodeState &&child_state, NodePointer<Word> child_node_ptr) {
-				    child_states[i] = std::move(child_state);
-				    return child_node_ptr;
-			    },
-			    [&](typename Editor_T::NodeState &&child_state) {
-				    child_states[i] = std::move(child_state);
-				    return edit_node<ThreadSafe>(editor, child_ptr, child_coord, child_states.data() + i);
-			    });
+			    editor, child_ptr, child_coord, &child_state, p_state,
+			    [&](NodePointer<Word> child_node_ptr) { return child_node_ptr; },
+			    [&]() { return edit_node<ThreadSafe>(editor, child_ptr, child_coord, &child_state); });
 
 			changed |= new_child_ptr != child_ptr;
 			children[i] = *new_child_ptr;
@@ -442,10 +438,11 @@ public:
 	inline const auto &GetConfig() const { return m_config; }
 	template <Editor<Word> Editor_T> inline NodePointer<Word> Edit(NodePointer<Word> root_ptr, const Editor_T &editor) {
 		make_filled_node_pointers();
+		typename Editor_T::NodeState state{};
 		return edit_switch(
-		    editor, root_ptr, {}, (const typename Editor_T::NodeState *)nullptr,
-		    [&](typename Editor_T::NodeState &&state, NodePointer<Word> new_root_ptr) { return new_root_ptr; },
-		    [&](typename Editor_T::NodeState &&state) { return edit_node<false>(editor, root_ptr, {}, &state); });
+		    editor, root_ptr, {}, &state, (const typename Editor_T::NodeState *)nullptr,
+		    [&](NodePointer<Word> new_root_ptr) { return new_root_ptr; },
+		    [&]() { return edit_node<false>(editor, root_ptr, {}, &state); });
 	}
 	inline void Iterate(NodePointer<Word> root_ptr, Iterator<Word> auto *p_iterator) const {
 		iterate_node(p_iterator, root_ptr, {});
