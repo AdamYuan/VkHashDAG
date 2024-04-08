@@ -33,7 +33,6 @@ add_subdirectory(dep/glm)
 add_subdirectory(dep/libfork)
 add_subdirectory(dep/parallel-hashmap)
 add_subdirectory(dep/thread-pool)
-add_subdirectory(dep/libmorton)
 
 add_subdirectory(shader)
 
@@ -52,7 +51,6 @@ target_link_libraries(VkHashDAG PRIVATE
         glm::glm
         BS::thread_pool
         phmap::phmap
-        libmorton::libmorton
         shader
 )
 # target_compile_options(VkHashDAG PRIVATE -fsanitize=address)
@@ -72,4 +70,3 @@ add_executable(VBRTest
 )
 target_include_directories(VBRTest PRIVATE include)
 target_compile_definitions(VBRTest PRIVATE -DHASHDAG_TEST)
-target_link_libraries(VBRTest PRIVATE libmorton::libmorton)

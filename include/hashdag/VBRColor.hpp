@@ -11,15 +11,9 @@
 
 #include <algorithm>
 #include <concepts>
-// #include <libmorton/morton.h>
-#include <ranges>
 #include <vector>
 
 namespace hashdag {
-
-/* inline uint32_t VBRGetMortonIndex(const glm::u32vec3 &pos) {
-    return libmorton::morton3D_32_encode(pos.x, pos.y, pos.z);
-} */
 
 class VBRColor {
 private:
