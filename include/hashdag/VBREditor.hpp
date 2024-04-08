@@ -38,7 +38,7 @@ struct VBREditorWrapper {
 	                         NodeState *p_state, const NodeState *p_parent_state) const {
 		auto [edit_type, color] = editor.EditNode(coord, node_ptr);
 
-		if (coord.level < octree.GetBlockLevel()) {
+		if (coord.level <= octree.GetBlockLevel()) {
 			p_state->octree_node =
 			    coord.level == 0 ? octree_root : octree.GetNode(p_parent_state->octree_node, coord.GetChildIndex());
 
