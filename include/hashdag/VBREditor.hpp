@@ -23,12 +23,9 @@ concept VBREditor = requires(const T ce) {
 } && std::unsigned_integral<Word>;
 
 template <std::unsigned_integral Word, VBROctree<Word> Octree_T, VBREditor<Word> Editor_T> struct VBREditorWrapper {
-	struct VBRModifier {
-		VBRColorBlockWriter writer;
-	};
 	struct NodeState {
 		NodePointer<Word> octree_node_ptr;
-		std::variant<std::monostate, VBRModifier, VBRModifier *> modifier_variant;
+		std::variant<std::monostate, VBRColorBlockWriter, VBRColorBlockWriter *> writer_variant;
 	};
 
 	Editor_T editor;
@@ -40,37 +37,48 @@ template <std::unsigned_integral Word, VBROctree<Word> Octree_T, VBREditor<Word>
 		auto [edit_type, color] = editor.EditNode(coord, node_ptr);
 
 		// TODO: Process Fill
-		if (coord.level <= octree.GetBlockLevel()) {
+		if (coord.level < octree.GetBlockLevel()) {
 			p_state->octree_node_ptr = coord.level == 0
 			                               ? octree_root_ptr
 			                               : octree.GetNode(p_parent_state->octree_node_ptr, coord.GetChildIndex());
 			if (coord.level == octree.GetBlockLevel()) {
-				p_state->modifier_variant = VBRModifier{
-				    .writer = VBRColorBlockWriter{octree.GetBlock(p_state->octree_node_ptr), 114514u},
-				};
+				p_state->writer_variant =
+				    VBRColorBlockWriter{VBRColorBlock::Iterator{octree.GetBlock(p_state->octree_node_ptr)}};
 			}
 		} else {
-			VBRModifier *p_modifier = coord.level == octree.GetBlockLevel() + 1
-			                              ? &std::get<VBRModifier>(p_parent_state->modifier_variant)
-			                              : std::get<VBRModifier>(p_parent_state->modifier_variant);
-			p_state->modifier_variant = p_modifier;
+			VBRColorBlockWriter *p_writer = coord.level == octree.GetBlockLevel() + 1
+			                                    ? &std::get<VBRColorBlockWriter>(p_parent_state->writer_variant)
+			                                    : std::get<VBRColorBlockWriter *>(p_parent_state->writer_variant);
+			p_state->writer_variant = p_writer;
 		}
 
 		return edit_type;
 	}
 	inline bool EditVoxel(const NodeCoord<Word> &coord, bool voxel, const NodeState *p_state) const {
-		VBRModifier *p_modifier = coord.level == octree.GetBlockLevel() + 1
-		                              ? &std::get<VBRModifier>(p_state->modifier_variant)
-		                              : std::get<VBRModifier>(p_state->modifier_variant);
-		VBRColor color = {}; // TODO: Read
-		voxel = editor.EditVoxel(coord, voxel, &color);
-		p_modifier->writer.SetNextColor(coord.GetSubCoord(octree.GetBlockLevel()), color);
+		VBRColorBlockWriter *p_writer = coord.level == octree.GetBlockLevel() + 1
+		                                    ? &std::get<VBRColorBlockWriter>(p_state->writer_variant)
+		                                    : std::get<VBRColorBlockWriter>(p_state->writer_variant);
+		p_writer->Edit([&](VBRColor *p_color) { voxel = editor.EditVoxel(coord, voxel, p_color); });
 		return voxel;
 	}
 
 	inline void JoinNode(const NodeCoord<Word> &coord, NodeState *p_state, std::span<const NodeState, 8> child_states) {
+		if (coord.level == octree.GetBlockLevel()) {
+			p_state->octree_node_ptr = octree.SetBlock(p_state->octree_node_ptr,
+			                                           std::get<VBRColorBlockWriter>(p_state->writer_variant).Flush());
+		} else if (coord.level < octree.GetBlockLevel()) {
+			std::array<NodePointer<Word>, 8> child_ptrs;
+			for (Word i = 0; i < 8; ++i)
+				child_ptrs[i] = child_states[i].octree_node_ptr;
+			p_state->octree_node_ptr = octree.SetNode(p_state->octree_node_ptr, child_ptrs);
+		}
 	}
-	inline void JoinLeaf(const NodeCoord<Word> &coord, NodeState *p_state) {}
+	inline void JoinLeaf(const NodeCoord<Word> &coord, NodeState *p_state) {
+		if (coord.level == octree.GetBlockLevel()) {
+			p_state->octree_node_ptr = octree.SetBlock(p_state->octree_node_ptr,
+			                                           std::get<VBRColorBlockWriter>(p_state->writer_variant).Flush());
+		}
+	}
 };
 
 } // namespace hashdag

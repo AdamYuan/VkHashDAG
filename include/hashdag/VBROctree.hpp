@@ -19,7 +19,7 @@ concept VBROctree = requires(T e, const T ce) {
 		ce.SetNode(NodePointer<Word>{}, std::declval<std::span<NodePointer<Word>, 8>>())
 	} -> std::convertible_to<NodePointer<Word>>;
 
-	{ ce.GetBlock(NodePointer<Word>{}) } -> std::convertible_to<VBRColorBlock *>;
+	{ ce.GetBlock(NodePointer<Word>{}) } -> std::convertible_to<const VBRColorBlock *>;
 	{ ce.SetBlock(NodePointer<Word>{}, VBRColorBlock{}) } -> std::convertible_to<NodePointer<Word>>;
 	{ ce.GetBlockLevel() } -> std::convertible_to<Word>;
 } && std::unsigned_integral<Word>;

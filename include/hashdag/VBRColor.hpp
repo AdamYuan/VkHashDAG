@@ -387,10 +387,12 @@ private:
 
 public:
 	inline explicit VBRColorBlockWriter(const VBRColorBlock::Iterator &src_iterator) : m_src_iterator(src_iterator) {}
-	inline void Flush(VBRColorBlock *p_dst) {
-		p_dst->m_macro_blocks = std::move(m_macro_blocks);
-		p_dst->m_block_headers = std::move(m_block_headers);
-		p_dst->m_weight_bits = std::move(m_weight_bits);
+	inline VBRColorBlock Flush() {
+		VBRColorBlock dst{};
+		dst.m_macro_blocks = std::move(m_macro_blocks);
+		dst.m_block_headers = std::move(m_block_headers);
+		dst.m_weight_bits = std::move(m_weight_bits);
+		return dst;
 	}
 
 	inline void Copy() {
