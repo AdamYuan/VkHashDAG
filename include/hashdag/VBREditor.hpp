@@ -11,10 +11,15 @@
 
 namespace hashdag {
 
+struct VBREditType {
+	EditType type;
+	VBRColor fill_color;
+};
+
 template <typename T, typename Word>
 concept VBREditor = requires(const T ce) {
-	{ ce.EditNode(NodeCoord<Word>{}, NodePointer<Word>{}, (RGBColor *){}) } -> std::convertible_to<EditType>;
-	{ ce.EditVoxel(NodeCoord<Word>{}, bool{}, (RGBColor *){}) } -> std::convertible_to<bool>;
+	{ ce.EditNode(NodeCoord<Word>{}, NodePointer<Word>{}) } -> std::convertible_to<VBREditType>;
+	{ ce.EditVoxel(NodeCoord<Word>{}, bool{}, (VBRColor *){}) } -> std::convertible_to<bool>;
 } && std::unsigned_integral<Word>;
 
 template <std::unsigned_integral Word, VBROctree<Word> Octree_T, VBREditor<Word> Editor_T> struct VBREditorWrapper {
@@ -32,8 +37,7 @@ template <std::unsigned_integral Word, VBROctree<Word> Octree_T, VBREditor<Word>
 
 	inline EditType EditNode(const NodeCoord<Word> &coord, NodePointer<Word> node_ptr, NodeState *p_state,
 	                         const NodeState *p_parent_state) const {
-		RGBColor color;
-		auto edit_type = editor.EditNode(coord, node_ptr, &color);
+		auto [edit_type, color] = editor.EditNode(coord, node_ptr);
 
 		// TODO: Process Fill
 		if (coord.level <= octree.GetBlockLevel()) {
@@ -58,9 +62,10 @@ template <std::unsigned_integral Word, VBROctree<Word> Octree_T, VBREditor<Word>
 		VBRModifier *p_modifier = coord.level == octree.GetBlockLevel() + 1
 		                              ? &std::get<VBRModifier>(p_state->modifier_variant)
 		                              : std::get<VBRModifier>(p_state->modifier_variant);
-		auto [new_voxel, new_color] = editor.EditVoxel(coord, voxel, RGBColor{});
-		p_modifier->writer.SetNextColor(coord.GetSubCoord(octree.GetBlockLevel()), new_color);
-		return new_voxel;
+		VBRColor color = {}; // TODO: Read
+		voxel = editor.EditVoxel(coord, voxel, &color);
+		p_modifier->writer.SetNextColor(coord.GetSubCoord(octree.GetBlockLevel()), color);
+		return voxel;
 	}
 
 	inline void JoinNode(const NodeCoord<Word> &coord, NodeState *p_state, std::span<const NodeState, 8> child_states) {
