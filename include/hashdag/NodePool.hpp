@@ -327,13 +327,13 @@ public:
 			constexpr Word kWordBits = std::countr_zero(sizeof(Word) * 8), kWordMask = (1u << kWordBits) - 1u;
 
 			bool voxel = (leaf[i >> kWordBits] >> (i & kWordMask)) & 1u;
-			bool new_voxel = editor.EditVoxel(coord.GetLeafCoord(i), voxel, p_state);
+			bool new_voxel = editor.EditVoxel(m_config, coord.GetLeafCoord(i), voxel, p_state);
 
 			changed |= new_voxel != voxel;
 			leaf[i >> kWordBits] ^= (Word(new_voxel != voxel) << (i & kWordMask));
 		}
 
-		editor.JoinLeaf(coord, p_state);
+		editor.JoinLeaf(m_config, coord, p_state);
 
 		return changed ? (leaf == LeafArray{0} ? NodePointer<Word>::Null()
 		                                       : upsert_leaf<ThreadSafe>(coord.level, leaf, leaf_ptr))
@@ -344,7 +344,7 @@ public:
 	inline auto edit_switch(const Editor_T &editor, NodePointer<Word> node_ptr, const NodeCoord<Word> &coord,
 	                        auto *p_state, const auto *p_parent_state, auto &&edit_terminate_func,
 	                        auto &&edit_proceed_func) const {
-		auto edit_type = editor.EditNode(coord, node_ptr, p_state, p_parent_state);
+		auto edit_type = editor.EditNode(m_config, coord, node_ptr, p_state, p_parent_state);
 		if (edit_type == EditType::kClear)
 			return edit_terminate_func(NodePointer<Word>::Null());
 		else if (edit_type == EditType::kFill)
@@ -384,7 +384,7 @@ public:
 			child_mask ^= (Word{bool(new_child_ptr) != bool(child_ptr)} << i); // Flip if occurrence changed
 		}
 
-		editor.JoinNode(coord, p_state, child_states);
+		editor.JoinNode(m_config, coord, p_state, child_states);
 
 		return changed
 		           ? (child_mask

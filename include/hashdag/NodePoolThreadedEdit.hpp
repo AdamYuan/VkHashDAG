@@ -78,7 +78,7 @@ private:
 			co_await lf::join();
 		}
 
-		p_editor->JoinNode(coord, p_state, child_states);
+		p_editor->JoinNode(get_node_pool().m_config, coord, p_state, child_states);
 
 		bool changed = false;
 		for (Word i = 0; i < 8; ++i) {

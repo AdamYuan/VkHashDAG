@@ -26,10 +26,11 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
 }
 
 struct AABBEditor {
-	uint32_t level;
 	glm::u32vec3 aabb_min, aabb_max;
-	inline hashdag::EditType EditNode(const hashdag::NodeCoord<uint32_t> &coord, hashdag::NodePointer<uint32_t>) const {
-		auto lb = coord.GetLowerBoundAtLevel(level), ub = coord.GetUpperBoundAtLevel(level);
+	inline hashdag::EditType EditNode(const hashdag::Config<uint32_t> &config,
+	                                  const hashdag::NodeCoord<uint32_t> &coord, hashdag::NodePointer<uint32_t>) const {
+		auto lb = coord.GetLowerBoundAtLevel(config.GetVoxelLevel()),
+		     ub = coord.GetUpperBoundAtLevel(config.GetVoxelLevel());
 		/* printf("(%d %d %d), (%d, %d, %d) -> %d\n", lb.x, lb.y, lb.z, ub.x, ub.y, ub.z,
 		       !ub.Any(std::less_equal<uint32_t>{}, aabb_min) && !lb.Any(std::greater_equal<uint32_t>{}, aabb_max)); */
 		if (glm::any(glm::lessThanEqual(ub, aabb_min)) || glm::any(glm::greaterThanEqual(lb, aabb_max)))
@@ -38,7 +39,8 @@ struct AABBEditor {
 			return hashdag::EditType::kFill;
 		return hashdag::EditType::kProceed;
 	}
-	inline bool EditVoxel(const hashdag::NodeCoord<uint32_t> &coord, bool voxel) const {
+	inline bool EditVoxel(const hashdag::Config<uint32_t> &config, const hashdag::NodeCoord<uint32_t> &coord,
+	                      bool voxel) const {
 		/*if (coord.pos.All(std::greater_equal<uint32_t>{}, aabb_min) && coord.pos.All(std::less<uint32_t>{}, aabb_max))
 		    printf("(%d %d %d)\n", coord.pos.x, coord.pos.y, coord.pos.z);
 		*/
@@ -48,11 +50,12 @@ struct AABBEditor {
 };
 
 template <bool Fill = true> struct SphereEditor {
-	uint32_t level;
 	glm::u32vec3 center;
 	uint64_t r2;
-	inline hashdag::EditType EditNode(const hashdag::NodeCoord<uint32_t> &coord, hashdag::NodePointer<uint32_t>) const {
-		auto lb = coord.GetLowerBoundAtLevel(level), ub = coord.GetUpperBoundAtLevel(level);
+	inline hashdag::EditType EditNode(const hashdag::Config<uint32_t> &config,
+	                                  const hashdag::NodeCoord<uint32_t> &coord, hashdag::NodePointer<uint32_t>) const {
+		auto lb = coord.GetLowerBoundAtLevel(config.GetVoxelLevel()),
+		     ub = coord.GetUpperBoundAtLevel(config.GetVoxelLevel());
 		glm::i64vec3 lb_dist = glm::i64vec3{lb} - glm::i64vec3(center);
 		glm::i64vec3 ub_dist = glm::i64vec3{ub} - glm::i64vec3(center);
 		glm::u64vec3 lb_dist_2 = lb_dist * lb_dist;
@@ -79,7 +82,8 @@ template <bool Fill = true> struct SphereEditor {
 
 		return min_n2 > r2 ? hashdag::EditType::kNotAffected : hashdag::EditType::kProceed;
 	}
-	inline bool EditVoxel(const hashdag::NodeCoord<uint32_t> &coord, bool voxel) const {
+	inline bool EditVoxel(const hashdag::Config<uint32_t> &config, const hashdag::NodeCoord<uint32_t> &coord,
+	                      bool voxel) const {
 		auto p = coord.pos;
 		glm::i64vec3 p_dist = glm::i64vec3{p.x, p.y, p.z} - glm::i64vec3(center);
 		uint64_t p_n2 = p_dist.x * p_dist.x + p_dist.y * p_dist.y + p_dist.z * p_dist.z;
@@ -167,7 +171,6 @@ int main() {
 		dag_node_pool->SetRoot(
 		    dag_node_pool->ThreadedEdit(&busy_pool, dag_node_pool->GetRoot(),
 		                                hashdag::StatelessEditorWrapper<uint32_t, AABBEditor>{AABBEditor{
-		                                    .level = dag_node_pool->GetConfig().GetLowestLevel(),
 		                                    .aabb_min = {0, 0, 0},
 		                                    .aabb_max = {5000, 5000, 5000},
 		                                }},
@@ -175,7 +178,6 @@ int main() {
 		dag_node_pool->SetRoot(
 		    dag_node_pool->ThreadedEdit(&busy_pool, dag_node_pool->GetRoot(),
 		                                hashdag::StatelessEditorWrapper<uint32_t, AABBEditor>{AABBEditor{
-		                                    .level = dag_node_pool->GetConfig().GetLowestLevel(),
 		                                    .aabb_min = {1001, 1000, 1000},
 		                                    .aabb_max = {10000, 10000, 10000},
 		                                }},
@@ -183,7 +185,6 @@ int main() {
 		dag_node_pool->SetRoot(dag_node_pool->ThreadedEdit(
 		    &busy_pool, dag_node_pool->GetRoot(),
 		    hashdag::StatelessEditorWrapper<uint32_t, SphereEditor<false>>{SphereEditor<false>{
-		        .level = dag_node_pool->GetConfig().GetLowestLevel(),
 		        .center = {5005, 5000, 5000},
 		        .r2 = 2000 * 2000,
 		    }},
@@ -191,7 +192,6 @@ int main() {
 		dag_node_pool->SetRoot(dag_node_pool->ThreadedEdit(
 		    &busy_pool, dag_node_pool->GetRoot(),
 		    hashdag::StatelessEditorWrapper<uint32_t, SphereEditor<false>>{SphereEditor<false>{
-		        .level = dag_node_pool->GetConfig().GetLowestLevel(),
 		        .center = {10000, 10000, 10000},
 		        .r2 = 4000 * 4000,
 		    }},
@@ -258,18 +258,16 @@ int main() {
 			std::optional<glm::vec3> p =
 			    dag_node_pool->Traversal<float>(dag_node_pool->GetRoot(), camera->m_position, camera->GetLook());
 			if (p) {
-				glm::u32vec3 up = *p * glm::vec3(dag_node_pool->GetConfig().GetResolution());
+				glm::u32vec3 up = *p * glm::vec3((float)dag_node_pool->GetConfig().GetResolution());
 				auto r2 = uint64_t(edit_radius * edit_radius);
 
 				if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
 					push_edit(hashdag::StatelessEditorWrapper<uint32_t, SphereEditor<false>>{SphereEditor<false>{
-					    .level = dag_node_pool->GetConfig().GetLowestLevel(),
 					    .center = up,
 					    .r2 = r2,
 					}});
 				} else if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
 					push_edit(hashdag::StatelessEditorWrapper<uint32_t, SphereEditor<>>{SphereEditor{
-					    .level = dag_node_pool->GetConfig().GetLowestLevel(),
 					    .center = up,
 					    .r2 = r2,
 					}});

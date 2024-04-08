@@ -6,23 +6,21 @@
 #ifndef VKHASHDAG_VBROCTREE_HPP
 #define VKHASHDAG_VBROCTREE_HPP
 
-#include "NodePointer.hpp"
 #include "VBRColor.hpp"
 #include <span>
 
 namespace hashdag {
 
-template <typename T, typename Word>
+template <typename T, typename Pointer>
 concept VBROctree = requires(T e, const T ce) {
-	{ ce.GetNode(NodePointer<Word>{}, 0) } -> std::convertible_to<NodePointer<Word>>;
-	{
-		ce.SetNode(NodePointer<Word>{}, std::declval<std::span<NodePointer<Word>, 8>>())
-	} -> std::convertible_to<NodePointer<Word>>;
+	{ ce.GetNode(Pointer{}, 0) } -> std::convertible_to<Pointer>;
+	{ e.SetNode(Pointer{}, std::declval<std::span<Pointer, 8>>()) } -> std::convertible_to<Pointer>;
+	{ e.FillNode(Pointer{}, VBRColor{}) } -> std::convertible_to<Pointer>;
 
-	{ ce.GetBlock(NodePointer<Word>{}) } -> std::convertible_to<const VBRColorBlock *>;
-	{ ce.SetBlock(NodePointer<Word>{}, VBRColorBlock{}) } -> std::convertible_to<NodePointer<Word>>;
-	{ ce.GetBlockLevel() } -> std::convertible_to<Word>;
-} && std::unsigned_integral<Word>;
+	{ ce.GetBlock(Pointer{}) } -> std::convertible_to<const VBRColorBlock *>;
+	{ e.SetBlock(Pointer{}, VBRColorBlock{}) } -> std::convertible_to<Pointer>;
+	{ ce.GetBlockLevel() } -> std::convertible_to<Pointer>;
+};
 
 } // namespace hashdag
 

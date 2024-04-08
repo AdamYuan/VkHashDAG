@@ -162,38 +162,38 @@ TEST_SUITE("NodePool") {
 		MurmurNodePool pool(4);
 		SingleIterator iter{};
 		auto root =
-		    pool.Edit({}, AABBEditor{.level = pool.GetConfig().GetLowestLevel(), .aabb_min = {}, .aabb_max{4, 4, 4}});
+		    pool.Edit({}, AABBEditor{.level = pool.GetConfig().GetVoxelLevel(), .aabb_min = {}, .aabb_max{4, 4, 4}});
 		CHECK(root);
 
 		auto root2 =
-		    pool.Edit(root, AABBEditor{.level = pool.GetConfig().GetLowestLevel(), .aabb_min = {}, .aabb_max{4, 4, 4}});
+		    pool.Edit(root, AABBEditor{.level = pool.GetConfig().GetVoxelLevel(), .aabb_min = {}, .aabb_max{4, 4, 4}});
 		CHECK(root2);
 		CHECK_EQ(root, root2);
 
-		iter = SingleIterator{.level = pool.GetConfig().GetLowestLevel(), .pos = {3, 3, 3}, .exist = false};
+		iter = SingleIterator{.level = pool.GetConfig().GetVoxelLevel(), .pos = {3, 3, 3}, .exist = false};
 		pool.Iterate(root2, &iter);
 		CHECK(iter.exist);
 
-		iter = SingleIterator{.level = pool.GetConfig().GetLowestLevel(), .pos = {4, 3, 3}, .exist = false};
+		iter = SingleIterator{.level = pool.GetConfig().GetVoxelLevel(), .pos = {4, 3, 3}, .exist = false};
 		pool.Iterate(root2, &iter);
 		CHECK(!iter.exist);
 
-		iter = SingleIterator{.level = pool.GetConfig().GetLowestLevel(), .pos = {3, 3, 3}, .exist = false};
+		iter = SingleIterator{.level = pool.GetConfig().GetVoxelLevel(), .pos = {3, 3, 3}, .exist = false};
 		pool.Iterate({}, &iter);
 		CHECK(!iter.exist);
 
 		auto root3 = pool.Edit(
-		    root2, AABBEditor{.level = pool.GetConfig().GetLowestLevel(), .aabb_min = {1, 1, 1}, .aabb_max{5, 5, 5}});
+		    root2, AABBEditor{.level = pool.GetConfig().GetVoxelLevel(), .aabb_min = {1, 1, 1}, .aabb_max{5, 5, 5}});
 		CHECK(root3);
 		CHECK_NE(root, root3);
 
 		auto root4 = pool.Edit(
-		    root3, AABBEditor{.level = pool.GetConfig().GetLowestLevel(), .aabb_min = {1, 2, 3}, .aabb_max{3, 5, 5}});
+		    root3, AABBEditor{.level = pool.GetConfig().GetVoxelLevel(), .aabb_min = {1, 2, 3}, .aabb_max{3, 5, 5}});
 		CHECK(root4);
 		CHECK_EQ(root3, root4);
 		CHECK_GT(pool.pages.size(), 4);
 
-		iter = SingleIterator{.level = pool.GetConfig().GetLowestLevel(), .pos = {4, 3, 3}, .exist = false};
+		iter = SingleIterator{.level = pool.GetConfig().GetVoxelLevel(), .pos = {4, 3, 3}, .exist = false};
 		pool.Iterate(root4, &iter);
 		CHECK(iter.exist);
 	}
@@ -203,7 +203,7 @@ TEST_SUITE("NodePool") {
 		MurmurNodePool pool(6);
 		auto root = pool.ThreadedEdit(
 		    &busy_pool, {},
-		    AABBEditor{.level = pool.GetConfig().GetLowestLevel(), .aabb_min = {}, .aabb_max{43, 21, 3}});
+		    AABBEditor{.level = pool.GetConfig().GetVoxelLevel(), .aabb_min = {}, .aabb_max{43, 21, 3}});
 		CHECK(root);
 	}
 }

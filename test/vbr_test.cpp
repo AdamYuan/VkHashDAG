@@ -98,6 +98,7 @@ TEST_CASE("Test VBRColorBlock") {
 		writer.append_voxels(hashdag::VBRColor{r565, g565, 0b10, 2}, kR2);
 		writer.append_voxels(hashdag::VBRColor{r565, g565, 0b1, 1}, kR2);
 		writer.append_voxels(hashdag::VBRColor{hashdag::RGB8Color{0x00FFFFFFu}}, kR2);
+		writer.Flush(&blk);
 	}
 
 	CHECK_EQ(blk.m_weight_bits.Size(), (3 + 3 + 2 + 1) * kR2);
@@ -116,7 +117,10 @@ TEST_CASE("Test VBRColorBlock") {
 	// Check Copy Equality
 	{
 		hashdag::VBRColorBlock blk2 = blk;
-		{ hashdag::VBRColorBlockWriter writer{&blk2, kLevel}; }
+		{
+			hashdag::VBRColorBlockWriter writer{&blk2, kLevel};
+			writer.Flush(&blk2);
+		}
 		vector_cmp(blk2.m_block_headers, blk.m_block_headers);
 		vector_cmp(blk2.m_macro_blocks, blk.m_macro_blocks);
 		vector_cmp(blk2.m_weight_bits.GetData(), blk.m_weight_bits.GetData());
@@ -128,6 +132,7 @@ TEST_CASE("Test VBRColorBlock") {
 		writer.copy_voxels(0, 5 * kR2);
 		writer.append_voxels(hashdag::VBRColor{hashdag::RGB8Color{0x000000FFu}}, (kResolution - 10u) * kR2);
 		writer.copy_voxels(0, 5 * kR2);
+		writer.Flush(&blk);
 	}
 	CHECK_EQ(blk.m_weight_bits.Size(), (3 + 3 + 2 + 1) * kR2 * 2);
 	for (uint32_t i = 0; i < kR2; ++i) {
