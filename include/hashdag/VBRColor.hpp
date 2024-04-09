@@ -38,41 +38,59 @@ public:
 	inline uint8_t GetBitsPerWeight() const { return m_bits_per_weight; }
 };
 
-// Variable Bitrate Block Encoding
-struct VBRMacroBlock {
-	uint32_t first_block;
-	uint32_t weight_start;
-	auto operator<=>(const VBRMacroBlock &) const = default;
-};
-struct VBRBlockHeader {
-	uint32_t colors;
-	// uint32_t voxel_index_offset : 14;
-	// uint32_t bits_per_weight : 2;
-	// uint32_t weight_offset : 16;
-	uint32_t packed_14_2_16;
-	inline uint32_t GetVoxelIndexOffset() const { return packed_14_2_16 >> 18u; }
-	inline uint32_t GetBitsPerWeight() const { return (packed_14_2_16 >> 16u) & 0x3u; }
-	inline uint32_t GetWeightOffset() const { return packed_14_2_16 & 0xFFFFu; }
-
-	inline VBRBlockHeader() = default;
-	inline VBRBlockHeader(uint32_t colors, uint32_t voxel_index_offset, uint32_t bits_per_weight,
-	                      uint32_t weight_offset)
-	    : colors{colors}, packed_14_2_16{(voxel_index_offset << 18u) | (bits_per_weight << 16u) | weight_offset} {}
-	auto operator<=>(const VBRBlockHeader &) const = default;
+struct VBRInfo {
+	static constexpr uint32_t kVoxelBitsPerMacroBlock = 14u;
+	static constexpr uint32_t kVoxelsPerMacroBlock = 1u << kVoxelBitsPerMacroBlock;
 };
 
-template <std::unsigned_integral Word> class VBRBitset {
+template <std::unsigned_integral Word> struct VBRWordInfo {
+	inline static constexpr Word kBits = sizeof(Word) << Word(3), kMask = kBits - Word(1),
+	                             kMaskBits = std::bit_width(kMask);
+};
+
+template <std::unsigned_integral Word, template <typename> typename Container> class VBRBitset {
 private:
-	inline static constexpr Word kWordBits = sizeof(Word) << Word(3), kWordMask = kWordBits - Word(1),
-	                             kWordMaskBits = std::bit_width(kWordMask);
+	inline static constexpr Word kWordBits = VBRWordInfo<Word>::kBits, kWordMask = VBRWordInfo<Word>::kMask,
+	                             kWordMaskBits = VBRWordInfo<Word>::kMaskBits;
+	Container<Word> m_bits;
+
+	template <std::unsigned_integral, template <typename> typename> friend class VBRBitset;
+	template <std::unsigned_integral> friend class VBRBitsetWriter;
+
+public:
+	inline VBRBitset() = default;
+	inline explicit VBRBitset(Container<Word> bits) : m_bits{std::move(bits)} {}
+	template <template <typename> typename SrcContainer>
+	inline explicit VBRBitset(const VBRBitset<Word, SrcContainer> &src) : m_bits{src.m_bits} {}
+	template <template <typename> typename SrcContainer>
+	inline explicit VBRBitset(VBRBitset<Word, SrcContainer> &&src) : m_bits{std::move(src.m_bits)} {}
+
+	inline const Container<Word> &GetBits() const { return m_bits; }
+	inline Word Get(std::size_t index, Word bits) const {
+		Word offset = index & kWordMask;
+		Word w0 = m_bits[index >> kWordMaskBits] >> offset;
+		if (offset + bits <= kWordBits) {
+			Word bit_mask = (Word(1) << bits) - Word(1);
+			return w0 & bit_mask;
+		}
+		Word w1 = m_bits[(index >> kWordMaskBits) + 1] & ((Word(1) << (bits + offset - kWordBits)) - Word(1));
+		return w0 | (w1 << (kWordBits - offset));
+	}
+};
+
+template <std::unsigned_integral Word> class VBRBitsetWriter {
+private:
+	inline static constexpr Word kWordBits = VBRWordInfo<Word>::kBits, kWordMask = VBRWordInfo<Word>::kMask,
+	                             kWordMaskBits = VBRWordInfo<Word>::kMaskBits;
+
 	std::vector<Word> m_bits;
 	std::size_t m_bit_count = 0;
 
-	// unit bits = 1, 2, 3 is guaranteed for VBR
-
 public:
-	inline const std::vector<Word> &GetData() const { return m_bits; }
-	inline std::size_t Size() const { return m_bit_count; }
+	inline std::size_t GetBitCount() const { return m_bit_count; }
+	inline VBRBitset<Word, std::vector> Flush() { return VBRBitset<Word, std::vector>{std::move(m_bits)}; }
+
+	// unit bits = 1, 2, 3 is guaranteed for VBR
 	inline void Push(Word word, Word bits, std::size_t count = 1) {
 		if (count == 0)
 			return;
@@ -129,7 +147,9 @@ public:
 
 		m_bit_count += bits * count;
 	}
-	inline void Copy(const VBRBitset<Word> &src, std::size_t src_begin, std::size_t src_bits) {
+
+	template <template <typename> typename SrcContainer>
+	inline void Copy(const VBRBitset<Word, SrcContainer> &src, std::size_t src_begin, std::size_t src_bits) {
 		if (src_bits == 0)
 			return;
 
@@ -182,155 +202,201 @@ public:
 
 		m_bit_count += src_bits;
 	}
-	inline Word Get(std::size_t index, Word bits) const {
-		Word offset = index & kWordMask;
-		Word w0 = m_bits[index >> kWordMaskBits] >> offset;
-		if (offset + bits <= kWordBits) {
-			Word bit_mask = (Word(1) << bits) - Word(1);
-			return w0 & bit_mask;
-		}
-		Word w1 = m_bits[(index >> kWordMaskBits) + 1] & ((Word(1) << (bits + offset - kWordBits)) - Word(1));
-		return w0 | (w1 << (kWordBits - offset));
-	}
-	inline void Clear() {
-		m_bit_count = 0;
-		m_bits.clear();
-	}
 };
 
-class VBRColorBlock {
-public:
-	class Iterator {
-	private:
-		const VBRColorBlock *m_p_parent{nullptr};
-		uint32_t m_macro_id{}, m_block_id{}, m_block_offset{};
+// Variable Bitrate Block Encoding
+struct VBRMacroBlock {
+	uint32_t first_block;
+	uint32_t weight_start;
+	auto operator<=>(const VBRMacroBlock &) const = default;
+};
+struct VBRBlockHeader {
+	uint32_t colors;
+	// uint32_t voxel_index_offset : 14;
+	// uint32_t bits_per_weight : 2;
+	// uint32_t weight_offset : 16;
+	uint32_t packed_14_2_16;
+	inline uint32_t GetVoxelIndexOffset() const { return packed_14_2_16 >> 18u; }
+	inline uint32_t GetBitsPerWeight() const { return (packed_14_2_16 >> 16u) & 0x3u; }
+	inline uint32_t GetWeightOffset() const { return packed_14_2_16 & 0xFFFFu; }
 
-		inline bool is_last_block() const { return m_block_id == m_p_parent->m_block_headers.size() - 1; }
-		inline uint32_t get_block_size() const {
-			assert(!is_last_block());
-			uint32_t next_voxel_offset = m_p_parent->m_block_headers[m_block_id + 1].GetVoxelIndexOffset();
-			next_voxel_offset = next_voxel_offset == 0u ? kVoxelsPerMacroBlock : next_voxel_offset;
-			return next_voxel_offset - m_p_parent->m_block_headers[m_block_id].GetVoxelIndexOffset();
-		}
-		inline void next_block() {
-			assert(!is_last_block());
-			m_block_offset = 0;
-			++m_block_id;
-			m_macro_id += GetBlockHeader().GetVoxelIndexOffset() == 0;
-		}
+	inline VBRBlockHeader() = default;
+	inline VBRBlockHeader(uint32_t colors, uint32_t voxel_index_offset, uint32_t bits_per_weight,
+	                      uint32_t weight_offset)
+	    : colors{colors}, packed_14_2_16{(voxel_index_offset << 18u) | (bits_per_weight << 16u) | weight_offset} {}
+	auto operator<=>(const VBRBlockHeader &) const = default;
+};
 
-	public:
-		inline Iterator() = default;
-		inline explicit Iterator(const VBRColorBlock &parent) : m_p_parent{&parent} {}
-		inline Iterator(const VBRColorBlock &parent, uint32_t voxel_index) : m_p_parent{&parent} {
-			LongJump(voxel_index);
-		}
+template <std::unsigned_integral Word, template <typename> typename Container> class VBRChunkIterator;
 
-		inline bool Empty() const { return m_p_parent == nullptr; }
-		inline const VBRColorBlock &GetParent() const { return *m_p_parent; }
-		inline const VBRMacroBlock &GetMacroBlock() const { return m_p_parent->m_macro_blocks[m_macro_id]; }
-		inline const VBRBlockHeader &GetBlockHeader() const { return m_p_parent->m_block_headers[m_block_id]; }
-		inline uint32_t GetVoxelIndex() const {
-			return (m_macro_id << kVoxelBitsPerMacroBlock) | (GetBlockHeader().GetVoxelIndexOffset() + m_block_offset);
-		}
-		inline uint32_t GetWeightIndex() const {
-			const VBRBlockHeader &block = GetBlockHeader();
-			return GetMacroBlock().weight_start + block.GetWeightOffset() + m_block_offset * block.GetBitsPerWeight();
-		}
-		inline VBRColor GetColor() const {
-			const VBRBlockHeader &block = GetBlockHeader();
-			uint32_t weight_bits = block.GetBitsPerWeight();
-			if (weight_bits == 0)
-				return {RGB8Color(block.colors)};
-			return VBRColor{R5G6B5Color(block.colors), R5G6B5Color(block.colors >> 16u),
-			                (uint8_t)m_p_parent->m_weight_bits.Get(GetWeightIndex(), weight_bits),
-			                (uint8_t)weight_bits};
-		}
-		inline void Next() {
-			Next([](auto &&) {});
-		}
-		inline void Next(std::invocable<const Iterator &> auto &&callback) {
-			callback(*this);
-			++m_block_offset;
-			if (!is_last_block() && m_block_offset == get_block_size())
-				next_block();
-		}
-		inline void Jump(uint32_t count) {
-			Jump(count, [](auto &&, auto &&) {});
-		}
-		inline void Jump(uint32_t count, std::invocable<const Iterator &, uint32_t> auto &&callback) {
-			if (count == 0)
-				return;
-			uint32_t step_count;
-			while (!is_last_block() && count >= (step_count = get_block_size() - m_block_offset)) {
-				callback(*this, step_count);
-				count -= step_count;
-				next_block();
-			}
-			if (count) {
-				callback(*this, count);
-				m_block_offset += count;
-			}
-		}
-		inline void LongJump(uint32_t count) {
-			if (count == 0)
-				return;
-			if (is_last_block() || m_block_offset + count < get_block_size()) {
-				// Still in m_block_id
-				m_block_offset += count;
-				return;
-			}
-			// Not in m_block_id
-			uint32_t voxel_index = GetVoxelIndex() + count;
-			uint32_t macro_id = voxel_index >> kVoxelBitsPerMacroBlock,
-			         macro_offset = voxel_index & (kVoxelsPerMacroBlock - 1u);
-			// '+ 2' to skip the next block
-			auto block_begin =
-			         m_p_parent->m_block_headers.begin() +
-			         (m_macro_id == macro_id ? m_block_id + 2 : m_p_parent->m_macro_blocks[macro_id].first_block),
-			     block_end =
-			         macro_id + 1 == m_p_parent->m_macro_blocks.size()
-			             ? m_p_parent->m_block_headers.end()
-			             : m_p_parent->m_block_headers.begin() + m_p_parent->m_macro_blocks[macro_id + 1].first_block;
-			assert(block_begin <= block_end);
-			auto block_it = std::upper_bound(block_begin, block_end, macro_offset,
-			                                 [](uint32_t i, VBRBlockHeader b) { return i < b.GetVoxelIndexOffset(); }) -
-			                1;
-			uint32_t block_id = block_it - m_p_parent->m_block_headers.begin();
-
-			m_macro_id = macro_id;
-			m_block_id = block_id;
-			m_block_offset = macro_offset - m_p_parent->m_block_headers[block_id].GetVoxelIndexOffset();
-		}
-	};
-
+template <std::unsigned_integral Word, template <typename> typename Container> class VBRChunk {
 #ifdef HASHDAG_TEST
 public:
 #else
 private:
 #endif
-	static constexpr uint32_t kVoxelBitsPerMacroBlock = 14u;
-	static constexpr uint32_t kVoxelsPerMacroBlock = 1u << kVoxelBitsPerMacroBlock;
+	Container<VBRMacroBlock> m_macro_blocks;
+	Container<VBRBlockHeader> m_block_headers;
+	VBRBitset<Word, Container> m_weight_bits;
+
+	template <std::unsigned_integral, template <typename> typename> friend class VBRChunk;
+	template <std::unsigned_integral, template <typename> typename> friend class VBRChunkWriter;
+
+public:
+	inline VBRChunk() = default;
+	template <template <typename> typename SrcContainer>
+	inline explicit VBRChunk(const VBRChunk<Word, SrcContainer> &src)
+	    : m_macro_blocks{src.m_macro_blocks}, m_block_headers{src.m_block_headers}, m_weight_bits{src.m_weight_bits} {}
+	template <template <typename> typename SrcContainer>
+	inline explicit VBRChunk(VBRChunk<Word, SrcContainer> &&src)
+	    : m_macro_blocks{std::move(src.m_macro_blocks)}, m_block_headers{std::move(src.m_block_headers)},
+	      m_weight_bits{std::move(src.m_weight_bits)} {}
+
+	inline VBRChunk(Container<VBRMacroBlock> macro_blocks, Container<VBRBlockHeader> block_headers,
+	                VBRBitset<Word, Container> weight_bits)
+	    : m_macro_blocks{std::move(macro_blocks)}, m_block_headers{std::move(block_headers)},
+	      m_weight_bits{std::move(weight_bits)} {}
+
+	inline bool Empty() const { return m_macro_blocks.empty(); }
+
+	template <template <typename> typename DstContainer = Container>
+	inline VBRChunkIterator<Word, DstContainer> Begin() const;
+	template <template <typename> typename DstContainer = Container>
+	inline VBRChunkIterator<Word, DstContainer> Find(uint32_t voxel_index) const;
+};
+
+template <std::unsigned_integral Word, template <typename> typename Container> class VBRChunkIterator {
+private:
+	static constexpr uint32_t kVoxelBitsPerMacroBlock = VBRInfo::kVoxelBitsPerMacroBlock;
+	static constexpr uint32_t kVoxelsPerMacroBlock = VBRInfo::kVoxelsPerMacroBlock;
+
+	VBRChunk<Word, Container> m_chunk;
+	uint32_t m_macro_id{}, m_block_id{}, m_block_offset{};
+
+	inline bool is_last_block() const { return m_block_id == m_chunk.m_block_headers.size() - 1; }
+	inline uint32_t get_block_size() const {
+		assert(!is_last_block());
+		uint32_t next_voxel_offset = m_chunk.m_block_headers[m_block_id + 1].GetVoxelIndexOffset();
+		next_voxel_offset = next_voxel_offset == 0u ? kVoxelsPerMacroBlock : next_voxel_offset;
+		return next_voxel_offset - m_chunk.m_block_headers[m_block_id].GetVoxelIndexOffset();
+	}
+	inline void next_block() {
+		assert(!is_last_block());
+		m_block_offset = 0;
+		++m_block_id;
+		m_macro_id += GetBlockHeader().GetVoxelIndexOffset() == 0;
+	}
+
+public:
+	inline VBRChunkIterator() = default;
+	template <template <typename> typename SrcContainer>
+	inline explicit VBRChunkIterator(const VBRChunk<Word, SrcContainer> &src) : m_chunk{src} {}
+	template <template <typename> typename SrcContainer>
+	inline explicit VBRChunkIterator(VBRChunk<Word, SrcContainer> &&src) : m_chunk{std::move(src)} {}
+
+	inline bool Empty() const { return m_chunk.Empty(); }
+	inline const VBRChunk<Word, Container> &GetChunk() const { return m_chunk; }
+
+	inline const VBRMacroBlock &GetMacroBlock() const { return m_chunk.m_macro_blocks[m_macro_id]; }
+	inline const VBRBlockHeader &GetBlockHeader() const { return m_chunk.m_block_headers[m_block_id]; }
+	inline uint32_t GetVoxelIndex() const {
+		return (m_macro_id << kVoxelBitsPerMacroBlock) | (GetBlockHeader().GetVoxelIndexOffset() + m_block_offset);
+	}
+	inline uint32_t GetWeightIndex() const {
+		const VBRBlockHeader &block = GetBlockHeader();
+		return GetMacroBlock().weight_start + block.GetWeightOffset() + m_block_offset * block.GetBitsPerWeight();
+	}
+	inline VBRColor GetColor() const {
+		const VBRBlockHeader &block = GetBlockHeader();
+		uint32_t weight_bits = block.GetBitsPerWeight();
+		if (weight_bits == 0)
+			return {RGB8Color(block.colors)};
+		return VBRColor{R5G6B5Color(block.colors), R5G6B5Color(block.colors >> 16u),
+		                (uint8_t)m_chunk.m_weight_bits.Get(GetWeightIndex(), weight_bits), (uint8_t)weight_bits};
+	}
+	inline void Next() {
+		Next([](auto &&) {});
+	}
+	inline void Next(std::invocable<const VBRChunkIterator &> auto &&callback) {
+		callback(*this);
+		++m_block_offset;
+		if (!is_last_block() && m_block_offset == get_block_size())
+			next_block();
+	}
+	inline void Jump(uint32_t count) {
+		Jump(count, [](auto &&, auto &&) {});
+	}
+	inline void Jump(uint32_t count, std::invocable<const VBRChunkIterator &, uint32_t> auto &&callback) {
+		if (count == 0)
+			return;
+		uint32_t step_count;
+		while (!is_last_block() && count >= (step_count = get_block_size() - m_block_offset)) {
+			callback(*this, step_count);
+			count -= step_count;
+			next_block();
+		}
+		if (count) {
+			callback(*this, count);
+			m_block_offset += count;
+		}
+	}
+	inline void LongJump(uint32_t count) {
+		if (count == 0)
+			return;
+		if (is_last_block() || m_block_offset + count < get_block_size()) {
+			// Still in m_block_id
+			m_block_offset += count;
+			return;
+		}
+		// Not in m_block_id
+		uint32_t voxel_index = GetVoxelIndex() + count;
+		uint32_t macro_id = voxel_index >> kVoxelBitsPerMacroBlock,
+		         macro_offset = voxel_index & (kVoxelsPerMacroBlock - 1u);
+		// '+ 2' to skip the next block
+		auto block_begin = m_chunk.m_block_headers.begin() +
+		                   (m_macro_id == macro_id ? m_block_id + 2 : m_chunk.m_macro_blocks[macro_id].first_block),
+		     block_end = macro_id + 1 == m_chunk.m_macro_blocks.size()
+		                     ? m_chunk.m_block_headers.end()
+		                     : m_chunk.m_block_headers.begin() + m_chunk.m_macro_blocks[macro_id + 1].first_block;
+		assert(block_begin <= block_end);
+		auto block_it = std::upper_bound(block_begin, block_end, macro_offset,
+		                                 [](uint32_t i, VBRBlockHeader b) { return i < b.GetVoxelIndexOffset(); }) -
+		                1;
+		uint32_t block_id = block_it - m_chunk.m_block_headers.begin();
+
+		m_macro_id = macro_id;
+		m_block_id = block_id;
+		m_block_offset = macro_offset - m_chunk.m_block_headers[block_id].GetVoxelIndexOffset();
+	}
+};
+
+template <std::unsigned_integral Word, template <typename> typename Container>
+template <template <typename> typename DstContainer>
+VBRChunkIterator<Word, DstContainer> VBRChunk<Word, Container>::Begin() const {
+	return VBRChunkIterator<Word, DstContainer>(*this);
+}
+template <std::unsigned_integral Word, template <typename> typename Container>
+template <template <typename> typename DstContainer>
+VBRChunkIterator<Word, DstContainer> VBRChunk<Word, Container>::Find(uint32_t voxel_index) const {
+	auto it = VBRChunkIterator<Word, DstContainer>(*this);
+	it.LongJump(voxel_index);
+	return it;
+}
+
+template <std::unsigned_integral Word, template <typename> typename SrcContainer> class VBRChunkWriter {
+#ifdef HASHDAG_TEST
+public:
+#else
+private:
+#endif
+	static constexpr uint32_t kVoxelBitsPerMacroBlock = VBRInfo::kVoxelBitsPerMacroBlock;
+	static constexpr uint32_t kVoxelsPerMacroBlock = VBRInfo::kVoxelsPerMacroBlock;
 
 	std::vector<VBRMacroBlock> m_macro_blocks;
 	std::vector<VBRBlockHeader> m_block_headers;
-	VBRBitset<uint32_t> m_weight_bits;
+	VBRBitsetWriter<Word> m_weight_bits;
 
-	friend class VBRColorBlockWriter;
-
-public:
-	inline virtual ~VBRColorBlock() = default;
-	inline Iterator Begin() const { return Iterator{*this}; }
-	inline Iterator Find(uint32_t voxel_index) const { return Iterator{*this, voxel_index}; }
-};
-
-class VBRColorBlockWriter final : public VBRColorBlock {
-#ifdef HASHDAG_TEST
-public:
-#else
-private:
-#endif
-	VBRColorBlock::Iterator m_src_iterator;
+	VBRChunkIterator<Word, SrcContainer> m_src_iterator;
 	uint32_t m_voxel_count = 0;
 
 	inline void append(uint32_t colors, uint32_t bits_per_weight, uint32_t voxel_count, auto &&push_weight_func) {
@@ -341,7 +407,7 @@ private:
 			if (macro_id >= m_macro_blocks.size()) {
 				m_macro_blocks.push_back(VBRMacroBlock{
 				    .first_block = uint32_t(m_block_headers.size()),
-				    .weight_start = uint32_t(m_weight_bits.Size()),
+				    .weight_start = uint32_t(m_weight_bits.GetBitCount()),
 				});
 				// assert(voxel_index % kVoxelsPerMacroBlock == 0);
 				m_block_headers.emplace_back(colors, 0, bits_per_weight, 0);
@@ -350,7 +416,8 @@ private:
 			if (colors != m_block_headers.back().colors ||
 			    bits_per_weight != m_block_headers.back().GetBitsPerWeight()) {
 				m_block_headers.emplace_back(colors, voxel_index & (kVoxelsPerMacroBlock - 1u), bits_per_weight,
-				                             uint32_t(m_weight_bits.Size()) - m_macro_blocks.back().weight_start);
+				                             uint32_t(m_weight_bits.GetBitCount()) -
+				                                 m_macro_blocks.back().weight_start);
 			}
 
 			uint32_t append_voxel_count =
@@ -365,49 +432,39 @@ private:
 		m_voxel_count += voxel_count;
 	}
 
-	inline void copy(const VBRColorBlock::Iterator &iterator, uint32_t count) {
+	inline void copy(const VBRChunkIterator<Word, SrcContainer> &iterator, uint32_t count) {
 		VBRBlockHeader block = iterator.GetBlockHeader();
 		append(block.colors, block.GetBitsPerWeight(), count, [&](uint32_t offset, uint32_t count) {
-			m_weight_bits.Copy(iterator.GetParent().m_weight_bits,
-			                   iterator.GetWeightIndex() + offset * block.GetBitsPerWeight(),
-			                   count * block.GetBitsPerWeight());
+			this->m_weight_bits.Copy(iterator.GetChunk().m_weight_bits,
+			                         iterator.GetWeightIndex() + offset * block.GetBitsPerWeight(),
+			                         count * block.GetBitsPerWeight());
 		});
 	}
 	inline void append(VBRColor color, uint32_t count) {
 		append(color.GetColors(), color.GetBitsPerWeight(), count, [this, color](uint32_t offset, uint32_t count) {
-			m_weight_bits.Push(color.GetWeight(), color.GetBitsPerWeight(), count);
+			this->m_weight_bits.Push(color.GetWeight(), color.GetBitsPerWeight(), count);
 		});
 	}
 
 public:
-	inline explicit VBRColorBlockWriter(const VBRColorBlock::Iterator &src_iterator) : m_src_iterator(src_iterator) {}
-	inline VBRColorBlock Flush() {
-		VBRColorBlock dst{};
-		dst.m_macro_blocks = std::move(m_macro_blocks);
-		dst.m_block_headers = std::move(m_block_headers);
-		dst.m_weight_bits = std::move(m_weight_bits);
-		return dst;
-	}
-
-	inline void Copy() {
-		if (m_src_iterator.Empty()) {
-			append(VBRColor{}, 1u);
-			return;
-		}
-		m_src_iterator.Next([&](const VBRColorBlock::Iterator &iterator) { copy(iterator, 1); });
+	inline VBRChunkWriter() = default;
+	template <template <typename> typename Container>
+	inline explicit VBRChunkWriter(const VBRChunk<Word, Container> &chunk) : m_src_iterator(chunk) {}
+	inline explicit VBRChunkWriter(const VBRChunkIterator<Word, SrcContainer> &src_iterator)
+	    : m_src_iterator(src_iterator) {}
+	inline uint32_t GetVoxelCount() const { return m_voxel_count; }
+	inline VBRChunk<Word, std::vector> Flush() {
+		return VBRChunk<Word, std::vector>{std::move(m_macro_blocks), std::move(m_block_headers),
+		                                   m_weight_bits.Flush()};
 	}
 	inline void Copy(uint32_t voxel_count) {
 		if (m_src_iterator.Empty()) {
 			append(VBRColor{}, voxel_count);
 			return;
 		}
-		m_src_iterator.Jump(voxel_count,
-		                    [&](const VBRColorBlock::Iterator &iterator, uint32_t count) { copy(iterator, count); });
-	}
-	inline void Append(VBRColor color) {
-		append(color, 1u);
-		if (!m_src_iterator.Empty())
-			m_src_iterator.Next();
+		m_src_iterator.Jump(voxel_count, [&](const VBRChunkIterator<Word, SrcContainer> &iterator, uint32_t count) {
+			copy(iterator, count);
+		});
 	}
 	inline void Append(VBRColor color, uint32_t voxel_count) {
 		append(color, voxel_count);
@@ -417,7 +474,8 @@ public:
 	inline void Edit(std::invocable<VBRColor *> auto &&editor) {
 		VBRColor color = {};
 		if (!m_src_iterator.Empty())
-			m_src_iterator.Next([&](const VBRColorBlock::Iterator &iterator) { color = iterator.GetColor(); });
+			m_src_iterator.Next(
+			    [&](const VBRChunkIterator<Word, SrcContainer> &iterator) { color = iterator.GetColor(); });
 		editor(&color);
 		append(color, 1u);
 	}
