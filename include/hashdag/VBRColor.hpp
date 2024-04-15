@@ -7,7 +7,6 @@
 #define VKHASHDAG_VBRCOLOR_HPP
 
 #include "Color.hpp"
-#include "NodeCoord.hpp"
 
 #include <algorithm>
 #include <concepts>

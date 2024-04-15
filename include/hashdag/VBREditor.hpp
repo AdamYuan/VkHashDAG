@@ -62,7 +62,7 @@ template <std::unsigned_integral Word, VBREditor<Word> Editor_T, VBROctree<Word>
 
 		return edit_type;
 	}
-	inline bool EditVoxel(const Config<Word> &config, const NodeCoord<Word> &coord, bool voxel,
+	inline bool EditVoxel(const Config<Word> &, const NodeCoord<Word> &coord, bool voxel,
 	                      const NodeState *p_state) const {
 		typename Octree_T::Writer *p_writer = coord.level == octree.GetLeafLevel() + 1
 		                                          ? &std::get<typename Octree_T::Writer>(p_state->writer_variant)
@@ -71,7 +71,7 @@ template <std::unsigned_integral Word, VBREditor<Word> Editor_T, VBROctree<Word>
 		return voxel;
 	}
 
-	inline void JoinNode(const Config<Word> &config, const NodeCoord<Word> &coord, NodeState *p_state,
+	inline void JoinNode(const Config<Word> &, const NodeCoord<Word> &coord, NodeState *p_state,
 	                     std::span<const NodeState, 8> child_states) {
 		if (coord.level == octree.GetLeafLevel()) {
 			p_state->octree_node = octree.FlushLeaf(
@@ -84,7 +84,7 @@ template <std::unsigned_integral Word, VBREditor<Word> Editor_T, VBROctree<Word>
 			p_state->octree_node = octree.SetNode(p_state->octree_node, octree_children);
 		}
 	}
-	inline void JoinLeaf(const Config<Word> &config, const NodeCoord<Word> &coord, NodeState *p_state) {
+	inline void JoinLeaf(const Config<Word> &, const NodeCoord<Word> &coord, NodeState *p_state) {
 		if (coord.level == octree.GetLeafLevel()) {
 			p_state->octree_node = octree.FlushLeaf(
 			    p_state->octree_node, std::move(std::get<typename Octree_T::Writer>(p_state->writer_variant)));

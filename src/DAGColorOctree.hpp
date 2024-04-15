@@ -40,7 +40,7 @@ private:
 	std::vector<Leaf> m_leaves;
 	std::shared_mutex m_mutex;
 
-	uint32_t m_leaf_level;
+	uint32_t m_leaf_level{};
 
 public:
 	// TODO: Make it thread-safe
@@ -55,8 +55,8 @@ public:
 		}
 		return ptr;
 	}
-	inline static Pointer ClearNode(Pointer ptr) { return Pointer{}; }
-	inline static Pointer FillNode(Pointer ptr, hashdag::VBRColor color) {
+	inline static Pointer ClearNode(Pointer) { return Pointer{}; }
+	inline static Pointer FillNode(Pointer, hashdag::VBRColor color) {
 		return Pointer{Pointer::Tag::kColor, hashdag::RGB8Color{color.Get()}.GetData()};
 	}
 
