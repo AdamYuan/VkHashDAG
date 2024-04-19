@@ -89,9 +89,9 @@ public:
 	inline std::size_t GetBitCount() const { return m_bit_count; }
 	inline VBRBitset<Word, std::vector> Flush() { return VBRBitset<Word, std::vector>{std::move(m_bits)}; }
 
-	// unit bits = 1, 2, 3 is guaranteed for VBR
+	// unit bits = 0, 1, 2, 3 is guaranteed for VBR
 	inline void Push(Word word, Word bits, std::size_t count = 1) {
-		if (count == 0)
+		if (count == 0 || bits == 0)
 			return;
 
 		Word bit_offset = m_bit_count & kWordMask;
@@ -316,8 +316,8 @@ public:
 	inline void Next() {
 		Next([](auto &&) {});
 	}
-	inline void Next(std::invocable<const VBRChunkIterator &> auto &&callback) {
-		callback(*this);
+	inline void Next(std::invocable<const VBRChunkIterator &> auto &&on_move_one) {
+		on_move_one(*this);
 		++m_block_offset;
 		if (!is_last_block() && m_block_offset == get_block_size())
 			next_block();
@@ -325,17 +325,17 @@ public:
 	inline void Jump(uint32_t count) {
 		Jump(count, [](auto &&, auto &&) {});
 	}
-	inline void Jump(uint32_t count, std::invocable<const VBRChunkIterator &, uint32_t> auto &&callback) {
+	inline void Jump(uint32_t count, std::invocable<const VBRChunkIterator &, uint32_t> auto &&on_move) {
 		if (count == 0)
 			return;
 		uint32_t step_count;
 		while (!is_last_block() && count >= (step_count = get_block_size() - m_block_offset)) {
-			callback(*this, step_count);
+			on_move(*this, step_count);
 			count -= step_count;
 			next_block();
 		}
 		if (count) {
-			callback(*this, count);
+			on_move(*this, count);
 			m_block_offset += count;
 		}
 	}
@@ -398,7 +398,8 @@ private:
 	VBRChunkIterator<Word, SrcContainer> m_src_iterator;
 	uint32_t m_voxel_count = 0;
 
-	inline void append(uint32_t colors, uint32_t bits_per_weight, uint32_t voxel_count, auto &&push_weight_func) {
+	inline void append(uint32_t colors, uint32_t bits_per_weight, uint32_t voxel_count,
+	                   std::invocable<uint32_t, uint32_t> auto &&on_push) {
 		for (uint32_t i = 0; i < voxel_count;) {
 			uint32_t voxel_index = m_voxel_count + i;
 
@@ -422,8 +423,7 @@ private:
 			uint32_t append_voxel_count =
 			    std::min(voxel_count - i, ((macro_id + 1u) << kVoxelBitsPerMacroBlock) - voxel_index);
 
-			if (bits_per_weight)
-				push_weight_func(i, append_voxel_count);
+			on_push(i, append_voxel_count);
 
 			i += append_voxel_count;
 		}
@@ -439,7 +439,7 @@ private:
 			                         count * block.GetBitsPerWeight());
 		});
 	}
-	inline void append(VBRColor color, uint32_t count) {
+	inline void push(VBRColor color, uint32_t count) {
 		append(color.GetColors(), color.GetBitsPerWeight(), count, [this, color](uint32_t offset, uint32_t count) {
 			this->m_weight_bits.Push(color.GetWeight(), color.GetBitsPerWeight(), count);
 		});
@@ -458,15 +458,15 @@ public:
 	}
 	inline void Copy(uint32_t voxel_count) {
 		if (m_src_iterator.Empty()) {
-			append(VBRColor{}, voxel_count);
+			push(VBRColor{}, voxel_count);
 			return;
 		}
 		m_src_iterator.Jump(voxel_count, [&](const VBRChunkIterator<Word, SrcContainer> &iterator, uint32_t count) {
 			copy(iterator, count);
 		});
 	}
-	inline void Append(VBRColor color, uint32_t voxel_count) {
-		append(color, voxel_count);
+	inline void Push(VBRColor color, uint32_t voxel_count) {
+		push(color, voxel_count);
 		if (!m_src_iterator.Empty())
 			m_src_iterator.LongJump(voxel_count);
 	}
@@ -476,7 +476,7 @@ public:
 			m_src_iterator.Next(
 			    [&](const VBRChunkIterator<Word, SrcContainer> &iterator) { color = iterator.GetColor(); });
 		editor(&color);
-		append(color, 1u);
+		push(color, 1u);
 	}
 };
 

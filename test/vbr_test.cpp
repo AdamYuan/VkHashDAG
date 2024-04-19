@@ -103,11 +103,11 @@ TEST_CASE("Test VBRChunk") {
 	// Basic Appends
 	{
 		hashdag::VBRChunkWriter<uint32_t, const_span> writer{};
-		writer.Append(hashdag::VBRColor{r565, g565, 0b111, 3}, kR2);
-		writer.Append(hashdag::VBRColor{r565, g565, 0b000, 3}, kR2);
-		writer.Append(hashdag::VBRColor{r565, g565, 0b10, 2}, kR2);
-		writer.Append(hashdag::VBRColor{r565, g565, 0b1, 1}, kR2);
-		writer.Append(hashdag::VBRColor{hashdag::RGB8Color{0x00FFFFFFu}}, kR2);
+		writer.Push(hashdag::VBRColor{r565, g565, 0b111, 3}, kR2);
+		writer.Push(hashdag::VBRColor{r565, g565, 0b000, 3}, kR2);
+		writer.Push(hashdag::VBRColor{r565, g565, 0b10, 2}, kR2);
+		writer.Push(hashdag::VBRColor{r565, g565, 0b1, 1}, kR2);
+		writer.Push(hashdag::VBRColor{hashdag::RGB8Color{0x00FFFFFFu}}, kR2);
 		CHECK_EQ(writer.m_weight_bits.GetBitCount(), (3 + 3 + 2 + 1) * kR2);
 		blk = writer.Flush();
 	}
