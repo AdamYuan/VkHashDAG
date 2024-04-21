@@ -62,13 +62,17 @@ add_executable(HashDAGTest
 target_include_directories(HashDAGTest PRIVATE include)
 target_compile_definitions(HashDAGTest PRIVATE -DHASHDAG_TEST)
 target_link_libraries(HashDAGTest PRIVATE libfork::libfork)
-target_compile_options(HashDAGTest PRIVATE -fsanitize=address)
-target_link_options(HashDAGTest PRIVATE -fsanitize=address)
+if (NOT MSVC)
+    target_compile_options(HashDAGTest PRIVATE -fsanitize=address)
+    target_link_options(HashDAGTest PRIVATE -fsanitize=address)
+endif ()
 
 add_executable(VBRTest
         test/vbr_test.cpp
 )
 target_include_directories(VBRTest PRIVATE include)
 target_compile_definitions(VBRTest PRIVATE -DHASHDAG_TEST)
-target_compile_options(VBRTest PRIVATE -fsanitize=address)
-target_link_options(VBRTest PRIVATE -fsanitize=address)
+if (NOT MSVC)
+    target_compile_options(VBRTest PRIVATE -fsanitize=address)
+    target_link_options(VBRTest PRIVATE -fsanitize=address)
+endif ()
