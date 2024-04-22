@@ -52,6 +52,7 @@ private:
 	inline static constexpr Word kWordBits = VBRWordInfo<Word>::kBits, kWordMask = VBRWordInfo<Word>::kMask,
 	                             kWordMaskBits = VBRWordInfo<Word>::kMaskBits;
 	Container<Word> m_bits;
+	static_assert(std::ranges::random_access_range<Container<Word>>);
 
 	template <std::unsigned_integral, template <typename> typename> friend class VBRBitset;
 	template <std::unsigned_integral> friend class VBRBitsetWriter;
@@ -237,6 +238,9 @@ private:
 	Container<VBRMacroBlock> m_macro_blocks;
 	Container<VBRBlockHeader> m_block_headers;
 	VBRBitset<Word, Container> m_weight_bits;
+
+	static_assert(std::ranges::random_access_range<Container<VBRMacroBlock>>);
+	static_assert(std::ranges::random_access_range<Container<VBRMacroBlock>>);
 
 	template <std::unsigned_integral, template <typename> typename> friend class VBRChunk;
 	template <std::unsigned_integral, template <typename> typename> friend class VBRChunkWriter;

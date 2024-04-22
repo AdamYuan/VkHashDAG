@@ -108,6 +108,7 @@ TEST_CASE("Test VBRChunk") {
 		writer.Push(hashdag::VBRColor{r565, g565, 0b10, 2}, kR2);
 		writer.Push(hashdag::VBRColor{r565, g565, 0b1, 1}, kR2);
 		writer.Push(hashdag::VBRColor{hashdag::RGB8Color{0x00FFFFFFu}}, kR2);
+		writer.Copy(kR2); // Empty Copy
 		CHECK_EQ(writer.m_weight_bits.GetBitCount(), (3 + 3 + 2 + 1) * kR2);
 		blk = writer.Flush();
 	}
@@ -126,7 +127,7 @@ TEST_CASE("Test VBRChunk") {
 	// Check Copy Equality
 	{
 		hashdag::VBRChunkWriter<uint32_t, const_span> writer{blk};
-		writer.Copy(5 * kR2);
+		writer.Copy(6 * kR2);
 		auto blk2 = writer.Flush();
 		vector_cmp(blk2.m_block_headers, blk.m_block_headers);
 		vector_cmp(blk2.m_macro_blocks, blk.m_macro_blocks);
@@ -134,37 +135,14 @@ TEST_CASE("Test VBRChunk") {
 	}
 
 	// Check Complex Copy
-	/* {
-	    hashdag::VBRChunkWriter writer{&blk, kLevel};
-	    writer.copy_voxels(0, 5 * kR2);
-	    writer.append_voxels(hashdag::VBRColor{hashdag::RGB8Color{0x000000FFu}}, (kResolution - 10u) * kR2);
-	    writer.copy_voxels(0, 5 * kR2);
-	    writer.Flush(&blk);
+	{
+		hashdag::VBRChunkWriter<uint32_t, const_span> writer{blk};
+		writer.Copy(kR2);
+		writer.Push(hashdag::VBRColor{r565, g565, 0b000, 3}, kR2);
+		writer.Copy(4 * kR2);
+		auto blk3 = writer.Flush();
+		vector_cmp(blk3.m_block_headers, blk.m_block_headers);
+		vector_cmp(blk3.m_macro_blocks, blk.m_macro_blocks);
+		vector_cmp(blk3.m_weight_bits.GetBits(), blk.m_weight_bits.GetBits());
 	}
-	CHECK_EQ(blk.m_weight_bits.Size(), (3 + 3 + 2 + 1) * kR2 * 2);
-	for (uint32_t i = 0; i < kR2; ++i) {
-	    CHECK_EQ(blk.get_color(i).GetBitsPerWeight(), 3);
-	    CHECK_EQ(blk.get_color(i).Get(), glm::vec3(0, 1, 0));
-	    CHECK_EQ(blk.get_color(i + kR2).GetBitsPerWeight(), 3);
-	    CHECK_EQ(blk.get_color(i + kR2).Get(), glm::vec3(1, 0, 0));
-	    CHECK_EQ(blk.get_color(i + kR2 * 2).GetBitsPerWeight(), 2);
-	    CHECK_EQ(blk.get_color(i + kR2 * 3).GetBitsPerWeight(), 1);
-	    CHECK_EQ(blk.get_color(i + kR2 * 4).GetBitsPerWeight(), 0);
-	    CHECK_EQ(blk.get_color(i + kR2 * 4).Get(), glm::vec3(1, 1, 1));
-	}
-	for (uint32_t i = 5; i < kResolution - 5; ++i) {
-	    CHECK_EQ(blk.get_color(i * kR2).GetBitsPerWeight(), 0);
-	    CHECK_EQ(blk.get_color(i * kR2).Get(), glm::vec3(1, 0, 0));
-	}
-	for (uint32_t i = 0; i < kR2; ++i) {
-	    constexpr uint32_t kB = (kResolution - 5) * kR2;
-	    CHECK_EQ(blk.get_color(kB + i).GetBitsPerWeight(), 3);
-	    CHECK_EQ(blk.get_color(kB + i).Get(), glm::vec3(0, 1, 0));
-	    CHECK_EQ(blk.get_color(kB + i + kR2).GetBitsPerWeight(), 3);
-	    CHECK_EQ(blk.get_color(kB + i + kR2).Get(), glm::vec3(1, 0, 0));
-	    CHECK_EQ(blk.get_color(kB + i + kR2 * 2).GetBitsPerWeight(), 2);
-	    CHECK_EQ(blk.get_color(kB + i + kR2 * 3).GetBitsPerWeight(), 1);
-	    CHECK_EQ(blk.get_color(kB + i + kR2 * 4).GetBitsPerWeight(), 0);
-	    CHECK_EQ(blk.get_color(kB + i + kR2 * 4).Get(), glm::vec3(1, 1, 1));
-	} */
 }
