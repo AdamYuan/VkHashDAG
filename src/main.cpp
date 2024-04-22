@@ -176,19 +176,21 @@ int main() {
 	auto dag_node_pool = myvk::MakePtr<DAGNodePool>(generic_queue, sparse_queue,
 	                                                hashdag::Config<uint32_t>::MakeDefault(16, 9, 14, 2, 7, 11));
 	auto dag_color_octree = myvk::MakePtr<DAGColorOctree>(10);
-	const auto edit = [&](hashdag::VBREditor<uint32_t> auto &&vbr_editor) {
-		using Editor_T = std::decay_t<decltype(vbr_editor)>;
-		dag_node_pool->ThreadedEdit(
-		    &busy_pool, dag_node_pool->GetRoot(),
-		    hashdag::VBREditorWrapper<uint32_t, Editor_T, DAGColorOctree>{
-		        .editor = std::forward<Editor_T>(vbr_editor), .p_octree = dag_color_octree.get(), .octree_root = {}},
-		    dag_color_octree->GetLeafLevel(), [&](hashdag::NodePointer<uint32_t> root_ptr, auto &&state) {
-			    dag_node_pool->SetRoot(root_ptr);
-			    dag_color_octree->SetRoot(state.octree_node);
-		    });
-	};
 
 	auto edit_ns = ns([&]() {
+		const auto edit = [&](hashdag::VBREditor<uint32_t> auto &&vbr_editor) {
+			using Editor_T = std::decay_t<decltype(vbr_editor)>;
+			dag_node_pool->ThreadedEdit(&busy_pool, dag_node_pool->GetRoot(),
+			                            hashdag::VBREditorWrapper<uint32_t, Editor_T, DAGColorOctree>{
+			                                .editor = std::forward<Editor_T>(vbr_editor),
+			                                .p_octree = dag_color_octree.get(),
+			                                .octree_root = dag_color_octree->GetRoot()},
+			                            dag_color_octree->GetLeafLevel(),
+			                            [&](hashdag::NodePointer<uint32_t> root_ptr, auto &&state) {
+				                            dag_node_pool->SetRoot(root_ptr);
+				                            dag_color_octree->SetRoot(state.octree_node);
+			                            });
+		};
 		edit(AABBEditor{
 		    .aabb_min = {0, 0, 0},
 		    .aabb_max = {5000, 5000, 5000},

@@ -9,6 +9,8 @@
 #include "Editor.hpp"
 #include "VBROctree.hpp"
 
+#include <memory>
+
 namespace hashdag {
 
 struct VBREditType {
@@ -29,7 +31,7 @@ concept VBREditor = requires(const T ce) {
 template <std::unsigned_integral Word, VBREditor<Word> Editor_T, VBROctree<Word> Octree_T> struct VBREditorWrapper {
 	struct NodeState {
 		typename Octree_T::Pointer octree_node;
-		mutable std::variant<std::monostate, typename Octree_T::Writer, typename Octree_T::Writer *> writer_variant;
+		typename Octree_T::Writer *p_writer;
 	};
 
 	Editor_T editor;
@@ -49,13 +51,10 @@ template <std::unsigned_integral Word, VBREditor<Word> Editor_T, VBROctree<Word>
 			else if (edit_type == EditType::kClear)
 				p_state->octree_node = p_octree->ClearNode(p_state->octree_node);
 			else if (edit_type == EditType::kProceed && coord.level == p_octree->GetLeafLevel())
-				p_state->writer_variant = p_octree->WriteLeaf(p_state->octree_node);
+				p_state->p_writer = new typename Octree_T::Writer(p_octree->WriteLeaf(p_state->octree_node));
 		} else {
-			typename Octree_T::Writer *p_writer =
-			    coord.level == p_octree->GetLeafLevel() + 1
-			        ? &std::get<typename Octree_T::Writer>(p_parent_state->writer_variant)
-			        : std::get<typename Octree_T::Writer *>(p_parent_state->writer_variant);
-			p_state->writer_variant = p_writer;
+			auto p_writer = p_parent_state->p_writer;
+			p_state->p_writer = p_writer;
 
 			uint32_t voxel_count = 1u << ((config.GetVoxelLevel() - coord.level) * 3u);
 			if (edit_type == EditType::kNotAffected)
@@ -68,10 +67,7 @@ template <std::unsigned_integral Word, VBREditor<Word> Editor_T, VBROctree<Word>
 	}
 	inline bool EditVoxel(const Config<Word> &config, const NodeCoord<Word> &coord, bool voxel,
 	                      const NodeState *p_state) const {
-		typename Octree_T::Writer *p_writer = coord.level == p_octree->GetLeafLevel() + 1
-		                                          ? &std::get<typename Octree_T::Writer>(p_state->writer_variant)
-		                                          : std::get<typename Octree_T::Writer *>(p_state->writer_variant);
-		p_writer->Edit([&](VBRColor *p_color) {
+		p_state->p_writer->Edit([&](VBRColor *p_color) {
 			VBRVoxel vbr_voxel = editor.EditVoxel(config, coord, VBRVoxel{voxel, *p_color});
 			voxel = vbr_voxel.voxel;
 			*p_color = vbr_voxel.color;
@@ -82,8 +78,8 @@ template <std::unsigned_integral Word, VBREditor<Word> Editor_T, VBROctree<Word>
 	inline void JoinNode(const Config<Word> &, const NodeCoord<Word> &coord, NodeState *p_state,
 	                     std::span<const NodeState, 8> child_states) const {
 		if (coord.level == p_octree->GetLeafLevel()) {
-			p_state->octree_node = p_octree->FlushLeaf(
-			    p_state->octree_node, std::move(std::get<typename Octree_T::Writer>(p_state->writer_variant)));
+			p_state->octree_node = p_octree->FlushLeaf(p_state->octree_node, std::move(*p_state->p_writer));
+			delete p_state->p_writer;
 		} else if (coord.level < p_octree->GetLeafLevel()) {
 			std::array<typename Octree_T::Pointer, 8> octree_children = {
 			    child_states[0].octree_node, child_states[1].octree_node, child_states[2].octree_node,
@@ -94,8 +90,8 @@ template <std::unsigned_integral Word, VBREditor<Word> Editor_T, VBROctree<Word>
 	}
 	inline void JoinLeaf(const Config<Word> &, const NodeCoord<Word> &coord, NodeState *p_state) const {
 		if (coord.level == p_octree->GetLeafLevel()) {
-			p_state->octree_node = p_octree->FlushLeaf(
-			    p_state->octree_node, std::move(std::get<typename Octree_T::Writer>(p_state->writer_variant)));
+			p_state->octree_node = p_octree->FlushLeaf(p_state->octree_node, std::move(*p_state->p_writer));
+			delete p_state->p_writer;
 		}
 	}
 };
