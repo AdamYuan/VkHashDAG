@@ -102,12 +102,13 @@ public:
 	inline NodePoolThreadedEdit() { static_assert(std::is_base_of_v<NodePoolBase<Derived, Word>, Derived>); }
 
 	template <Editor<Word> Editor_T>
-	inline NodePointer<Word> ThreadedEdit(lf::busy_pool *p_lf_pool, NodePointer<Word> root_ptr, const Editor_T &editor,
-	                                      Word max_task_level = -1) {
+	inline auto ThreadedEdit(lf::busy_pool *p_lf_pool, NodePointer<Word> root_ptr, const Editor_T &editor,
+	                         Word max_task_level,
+	                         std::invocable<NodePointer<Word>, typename Editor_T::NodeState> auto &&on_edit_done) {
 		get_node_pool().make_filled_node_pointers();
 
 		typename Editor_T::NodeState state{};
-		return get_node_pool().template edit_switch<Editor_T>(
+		root_ptr = get_node_pool().template edit_switch<Editor_T>(
 		    editor, root_ptr, {}, &state, (const typename Editor_T::NodeState *)nullptr,
 		    [&](NodePointer<Word> new_root_ptr) { return new_root_ptr; },
 		    [&]() {
@@ -115,6 +116,14 @@ public:
 			                                                             max_task_level));
 			    return root_ptr;
 		    });
+		return on_edit_done(root_ptr, std::move(state));
+	}
+
+	template <Editor<Word> Editor_T>
+	inline NodePointer<Word> ThreadedEdit(lf::busy_pool *p_lf_pool, NodePointer<Word> root_ptr, const Editor_T &editor,
+	                                      Word max_task_level = -1) {
+		return ThreadedEdit(p_lf_pool, root_ptr, editor, max_task_level,
+		                    [](NodePointer<Word> root_ptr, auto &&) { return root_ptr; });
 	}
 };
 

@@ -244,6 +244,7 @@ private:
 
 	template <std::unsigned_integral, template <typename> typename> friend class VBRChunk;
 	template <std::unsigned_integral, template <typename> typename> friend class VBRChunkWriter;
+	template <std::unsigned_integral, template <typename> typename> friend class VBRChunkIterator;
 
 public:
 	inline VBRChunk() = default;

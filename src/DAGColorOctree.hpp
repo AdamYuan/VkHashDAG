@@ -62,8 +62,11 @@ private:
 	SafeVector<Leaf> m_leaves;
 
 	uint32_t m_leaf_level{};
+	Pointer m_root = {};
 
 public:
+	inline explicit DAGColorOctree(uint32_t leaf_level) : m_leaf_level{leaf_level} {}
+
 	inline Pointer GetNode(Pointer ptr, auto idx) const {
 		return ptr.GetTag() == Pointer::Tag::kNode
 		           ? m_nodes.Read(ptr.GetData(), [idx](Node node) -> Pointer { return node[idx]; })
@@ -97,6 +100,9 @@ public:
 		return ptr;
 	}
 	inline uint32_t GetLeafLevel() const { return m_leaf_level; }
+
+	inline Pointer GetRoot() const { return m_root; }
+	inline void SetRoot(Pointer root) { m_root = root; }
 };
 
 static_assert(hashdag::VBROctree<DAGColorOctree, uint32_t>);

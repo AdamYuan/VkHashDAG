@@ -436,13 +436,19 @@ public:
 		m_bucket_level_bases = m_config.GetLevelBaseBucketIndices();
 	}
 	inline const auto &GetConfig() const { return m_config; }
-	template <Editor<Word> Editor_T> inline NodePointer<Word> Edit(NodePointer<Word> root_ptr, const Editor_T &editor) {
+	template <Editor<Word> Editor_T>
+	inline auto Edit(NodePointer<Word> root_ptr, const Editor_T &editor,
+	                 std::invocable<NodePointer<Word>, typename Editor_T::NodeState> auto &&on_edit_done) {
 		make_filled_node_pointers();
 		typename Editor_T::NodeState state{};
-		return edit_switch(
+		root_ptr = edit_switch(
 		    editor, root_ptr, {}, &state, (const typename Editor_T::NodeState *)nullptr,
 		    [&](NodePointer<Word> new_root_ptr) { return new_root_ptr; },
 		    [&]() { return edit_node<false>(editor, root_ptr, {}, &state); });
+		return on_edit_done(root_ptr, std::move(state));
+	}
+	template <Editor<Word> Editor_T> inline NodePointer<Word> Edit(NodePointer<Word> root_ptr, const Editor_T &editor) {
+		return Edit(root_ptr, editor, [&](NodePointer<Word> root_ptr, auto &&) { return root_ptr; });
 	}
 	inline void Iterate(NodePointer<Word> root_ptr, Iterator<Word> auto *p_iterator) const {
 		iterate_node(p_iterator, root_ptr, {});
