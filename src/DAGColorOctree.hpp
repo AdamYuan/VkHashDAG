@@ -42,11 +42,11 @@ private:
 		std::vector<T> vector;
 		mutable std::shared_mutex mutex;
 
-		inline auto Visit(std::size_t idx, std::invocable<const T &> auto &&visitor) const {
+		inline auto Read(std::size_t idx, std::invocable<const T &> auto &&visitor) const {
 			std::shared_lock lock{mutex};
 			return visitor(vector[idx]);
 		}
-		inline auto Visit(std::size_t idx, std::invocable<T &> auto &&visitor) {
+		inline auto Write(std::size_t idx, std::invocable<T &> auto &&visitor) {
 			std::shared_lock lock{mutex};
 			return visitor(vector[idx]);
 		}
@@ -66,12 +66,12 @@ private:
 public:
 	inline Pointer GetNode(Pointer ptr, auto idx) const {
 		return ptr.GetTag() == Pointer::Tag::kNode
-		           ? m_nodes.Visit(ptr.GetData(), [idx](Node node) -> Pointer { return node[idx]; })
+		           ? m_nodes.Read(ptr.GetData(), [idx](Node node) -> Pointer { return node[idx]; })
 		           : Pointer{};
 	}
 	inline Pointer SetNode(Pointer ptr, std::span<const Pointer, 8> child_ptrs) {
 		if (ptr.GetTag() != Pointer::Tag::kNode ||
-		    !std::ranges::equal(m_nodes.Visit(ptr.GetData(), [](Node node) { return node; }), child_ptrs)) {
+		    !std::ranges::equal(m_nodes.Read(ptr.GetData(), [](Node node) { return node; }), child_ptrs)) {
 			ptr =
 			    Pointer{Pointer::Tag::kNode,
 			            (uint32_t)m_nodes.Append({}, [&](Node &node) { std::ranges::copy(child_ptrs, node.begin()); })};
@@ -85,7 +85,7 @@ public:
 
 	inline Writer WriteLeaf(Pointer ptr) const {
 		return ptr.GetTag() == Pointer::Tag::kLeaf
-		           ? m_leaves.Visit(ptr.GetData(), [](const Leaf &leaf) { return Writer{leaf.chunk}; })
+		           ? m_leaves.Read(ptr.GetData(), [](const Leaf &leaf) { return Writer{leaf.chunk}; })
 		           : Writer{};
 	}
 	inline Pointer FlushLeaf(Pointer ptr, Writer &&writer) {
@@ -93,7 +93,7 @@ public:
 			ptr =
 			    Pointer{Pointer::Tag::kLeaf, (uint32_t)m_leaves.Append(Leaf{.chunk = writer.Flush()}, [](auto &&) {})};
 		else
-			m_leaves.Visit(ptr.GetData(), [&](Leaf &leaf) { leaf.chunk = writer.Flush(); });
+			m_leaves.Write(ptr.GetData(), [&](Leaf &leaf) { leaf.chunk = writer.Flush(); });
 		return ptr;
 	}
 	inline uint32_t GetLeafLevel() const { return m_leaf_level; }
