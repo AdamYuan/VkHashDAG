@@ -489,7 +489,7 @@ public:
 			m_src_iterator.Next(
 			    [&](const VBRChunkIterator<Word, SrcContainer> &iterator) { color = iterator.GetColor(); });
 		editor(color);
-		push({}, 1u);
+		push(color, 1u);
 	}
 };
 

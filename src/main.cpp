@@ -210,14 +210,12 @@ int main() {
 		edit(AABBEditor{
 		    .aabb_min = {0, 0, 0},
 		    .aabb_max = {5000, 5000, 5000},
-		    // .color = hashdag::RGB8Color{0xFF0000},
-		    .color = {},
+		    .color = hashdag::RGB8Color{0xFF0000},
 		});
 		edit(AABBEditor{
 		    .aabb_min = {1001, 1000, 1000},
 		    .aabb_max = {10000, 10000, 10000},
-		    // .color = hashdag::RGB8Color{0xFF0000},
-		    .color = {},
+		    .color = hashdag::RGB8Color{0xFF0000},
 		});
 		edit(SphereEditor<false>{
 		    .center = {5005, 5000, 5000},
