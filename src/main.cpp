@@ -31,27 +31,33 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
 struct AABBEditor {
 	glm::u32vec3 aabb_min, aabb_max;
 	hashdag::VBRColor color;
-	inline hashdag::VBREditType EditNode(const hashdag::Config<uint32_t> &config,
-	                                     const hashdag::NodeCoord<uint32_t> &coord,
-	                                     hashdag::NodePointer<uint32_t>) const {
+	inline hashdag::EditType EditNode(const hashdag::Config<uint32_t> &config,
+	                                  const hashdag::NodeCoord<uint32_t> &coord, hashdag::NodePointer<uint32_t>) const {
 		auto lb = coord.GetLowerBoundAtLevel(config.GetVoxelLevel()),
 		     ub = coord.GetUpperBoundAtLevel(config.GetVoxelLevel());
 		/* printf("(%d %d %d), (%d, %d, %d) -> %d\n", lb.x, lb.y, lb.z, ub.x, ub.y, ub.z,
 		       !ub.Any(std::less_equal<uint32_t>{}, aabb_min) && !lb.Any(std::greater_equal<uint32_t>{}, aabb_max)); */
 		if (glm::any(glm::lessThanEqual(ub, aabb_min)) || glm::any(glm::greaterThanEqual(lb, aabb_max)))
-			return {hashdag::EditType::kNotAffected};
+			return hashdag::EditType::kNotAffected;
 		if (glm::all(glm::greaterThanEqual(lb, aabb_min)) && glm::all(glm::lessThanEqual(ub, aabb_max)))
-			return {hashdag::EditType::kFill, color};
-		return {hashdag::EditType::kProceed};
+			return hashdag::EditType::kFill;
+		return hashdag::EditType::kProceed;
 	}
-	inline hashdag::VBRVoxel EditVoxel(const hashdag::Config<uint32_t> &config,
-	                                   const hashdag::NodeCoord<uint32_t> &coord, hashdag::VBRVoxel voxel) const {
-		/*if (coord.pos.All(std::greater_equal<uint32_t>{}, aabb_min) && coord.pos.All(std::less<uint32_t>{}, aabb_max))
-		    printf("(%d %d %d)\n", coord.pos.x, coord.pos.y, coord.pos.z);
-		*/
-		bool flag =
-		    glm::all(glm::greaterThanEqual(coord.pos, aabb_min)) && glm::all(glm::lessThan(coord.pos, aabb_max));
-		return flag ? hashdag::VBRVoxel{true, color} : voxel;
+	inline hashdag::EditType EditNode(const hashdag::Config<uint32_t> &config,
+	                                  const hashdag::NodeCoord<uint32_t> &coord, hashdag::NodePointer<uint32_t>,
+	                                  hashdag::VBRColor &color) const {
+		color = this->color;
+		return EditNode(config, coord, {});
+	}
+	inline bool EditVoxel(const hashdag::Config<uint32_t> &config, const hashdag::NodeCoord<uint32_t> &coord,
+	                      bool voxel) const {
+		return voxel ||
+		       glm::all(glm::greaterThanEqual(coord.pos, aabb_min)) && glm::all(glm::lessThan(coord.pos, aabb_max));
+	}
+	inline bool EditVoxel(const hashdag::Config<uint32_t> &config, const hashdag::NodeCoord<uint32_t> &coord,
+	                      bool voxel, hashdag::VBRColor &color) const {
+		color = this->color;
+		return EditVoxel(config, coord, voxel);
 	}
 };
 
@@ -59,9 +65,8 @@ template <bool Fill = true> struct SphereEditor {
 	glm::u32vec3 center;
 	uint64_t r2;
 	hashdag::VBRColor color;
-	inline hashdag::VBREditType EditNode(const hashdag::Config<uint32_t> &config,
-	                                     const hashdag::NodeCoord<uint32_t> &coord,
-	                                     hashdag::NodePointer<uint32_t>) const {
+	inline hashdag::EditType EditNode(const hashdag::Config<uint32_t> &config,
+	                                  const hashdag::NodeCoord<uint32_t> &coord, hashdag::NodePointer<uint32_t>) const {
 		auto lb = coord.GetLowerBoundAtLevel(config.GetVoxelLevel()),
 		     ub = coord.GetUpperBoundAtLevel(config.GetVoxelLevel());
 		glm::i64vec3 lb_dist = glm::i64vec3{lb} - glm::i64vec3(center);
@@ -72,8 +77,7 @@ template <bool Fill = true> struct SphereEditor {
 		glm::u64vec3 max_dist_2 = glm::max(lb_dist_2, ub_dist_2);
 		uint64_t max_n2 = max_dist_2.x + max_dist_2.y + max_dist_2.z;
 		if (max_n2 <= r2)
-			return Fill ? hashdag::VBREditType{hashdag::EditType::kFill, color}
-			            : hashdag::VBREditType{hashdag::EditType::kClear};
+			return Fill ? hashdag::EditType::kFill : hashdag::EditType::kClear;
 
 		uint64_t min_n2 = 0;
 		if (lb_dist.x > 0)
@@ -89,17 +93,28 @@ template <bool Fill = true> struct SphereEditor {
 		if (ub_dist.z < 0)
 			min_n2 += ub_dist_2.z;
 
-		return {min_n2 > r2 ? hashdag::EditType::kNotAffected : hashdag::EditType::kProceed};
+		return min_n2 > r2 ? hashdag::EditType::kNotAffected : hashdag::EditType::kProceed;
 	}
-	inline hashdag::VBRVoxel EditVoxel(const hashdag::Config<uint32_t> &config,
-	                                   const hashdag::NodeCoord<uint32_t> &coord, hashdag::VBRVoxel voxel) const {
+	inline hashdag::EditType EditNode(const hashdag::Config<uint32_t> &config,
+	                                  const hashdag::NodeCoord<uint32_t> &coord, hashdag::NodePointer<uint32_t>,
+	                                  hashdag::VBRColor &color) const {
+		color = this->color;
+		return EditNode(config, coord, {});
+	}
+	inline bool EditVoxel(const hashdag::Config<uint32_t> &config, const hashdag::NodeCoord<uint32_t> &coord,
+	                      bool voxel) const {
 		auto p = coord.pos;
 		glm::i64vec3 p_dist = glm::i64vec3{p.x, p.y, p.z} - glm::i64vec3(center);
 		uint64_t p_n2 = p_dist.x * p_dist.x + p_dist.y * p_dist.y + p_dist.z * p_dist.z;
 		if constexpr (Fill)
-			return p_n2 <= r2 ? hashdag::VBRVoxel{true, color} : voxel;
+			return voxel || p_n2 <= r2;
 		else
-			return p_n2 > r2 ? voxel : hashdag::VBRVoxel{false};
+			return voxel && p_n2 > r2;
+	}
+	inline bool EditVoxel(const hashdag::Config<uint32_t> &config, const hashdag::NodeCoord<uint32_t> &coord,
+	                      bool voxel, hashdag::VBRColor &color) const {
+		color = this->color;
+		return EditVoxel(config, coord, voxel);
 	}
 };
 
@@ -184,7 +199,8 @@ int main() {
 			                            hashdag::VBREditorWrapper<uint32_t, Editor_T, DAGColorOctree>{
 			                                .editor = std::forward<Editor_T>(vbr_editor),
 			                                .p_octree = dag_color_octree.get(),
-			                                .octree_root = dag_color_octree->GetRoot()},
+			                                .octree_root = dag_color_octree->GetRoot(),
+			                            },
 			                            dag_color_octree->GetLeafLevel(),
 			                            [&](hashdag::NodePointer<uint32_t> root_ptr, auto &&state) {
 				                            dag_node_pool->SetRoot(root_ptr);
@@ -194,20 +210,24 @@ int main() {
 		edit(AABBEditor{
 		    .aabb_min = {0, 0, 0},
 		    .aabb_max = {5000, 5000, 5000},
-		    .color = hashdag::RGB8Color{0xFF0000},
+		    // .color = hashdag::RGB8Color{0xFF0000},
+		    .color = {},
 		});
 		edit(AABBEditor{
 		    .aabb_min = {1001, 1000, 1000},
 		    .aabb_max = {10000, 10000, 10000},
-		    .color = hashdag::RGB8Color{0xFF0000},
+		    // .color = hashdag::RGB8Color{0xFF0000},
+		    .color = {},
 		});
 		edit(SphereEditor<false>{
 		    .center = {5005, 5000, 5000},
 		    .r2 = 2000 * 2000,
+		    .color = {},
 		});
 		edit(SphereEditor<false>{
 		    .center = {10000, 10000, 10000},
 		    .r2 = 4000 * 4000,
+		    .color = {},
 		});
 	});
 	printf("edit cost %lf ms\n", (double)edit_ns / 1000000.0);
@@ -275,17 +295,17 @@ int main() {
 				glm::u32vec3 up = *p * glm::vec3((float)dag_node_pool->GetConfig().GetResolution());
 				auto r2 = uint64_t(edit_radius * edit_radius);
 
-				/* if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
-				    push_edit(hashdag::StatelessEditorWrapper<uint32_t, SphereEditor<false>>{SphereEditor<false>{
-				        .center = up,
-				        .r2 = r2,
-				    }});
+				if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
+					push_edit(hashdag::StatelessEditorWrapper<uint32_t, SphereEditor<false>>{SphereEditor<false>{
+					    .center = up,
+					    .r2 = r2,
+					}});
 				} else if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
-				    push_edit(hashdag::StatelessEditorWrapper<uint32_t, SphereEditor<>>{SphereEditor{
-				        .center = up,
-				        .r2 = r2,
-				    }});
-				} */
+					push_edit(hashdag::StatelessEditorWrapper<uint32_t, SphereEditor<>>{SphereEditor{
+					    .center = up,
+					    .r2 = r2,
+					}});
+				}
 				// printf("%f %f %f\n", p->x, p->y, p->z);
 			}
 		}

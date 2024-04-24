@@ -20,16 +20,16 @@ enum class EditType { kNotAffected, kProceed, kFill, kClear };
 template <typename T, typename Word>
 concept Editor = requires(const T ce) {
 	typename T::NodeState;
-	ce.JoinNode(Config<Word>{}, NodeCoord<Word>{}, (typename T::NodeState *){},
+	ce.JoinNode(Config<Word>{}, NodeCoord<Word>{}, std::declval<typename T::NodeState &>(),
 	            std::declval<std::span<const typename T::NodeState, 8>>());
-	ce.JoinLeaf(Config<Word>{}, NodeCoord<Word>{}, (typename T::NodeState *){});
+	ce.JoinLeaf(Config<Word>{}, NodeCoord<Word>{}, std::declval<typename T::NodeState &>());
 
 	{
-		ce.EditNode(Config<Word>{}, NodeCoord<Word>{}, NodePointer<Word>{}, (typename T::NodeState *){},
-		            (const typename T::NodeState *){})
+		ce.EditNode(Config<Word>{}, NodeCoord<Word>{}, NodePointer<Word>{}, std::declval<typename T::NodeState &>(),
+		            std::declval<const typename T::NodeState &>())
 	} -> std::convertible_to<EditType>;
 	{
-		ce.EditVoxel(Config<Word>{}, NodeCoord<Word>{}, bool{}, (typename T::NodeState *){})
+		ce.EditVoxel(Config<Word>{}, NodeCoord<Word>{}, bool{}, std::declval<typename T::NodeState &>())
 	} -> std::convertible_to<bool>;
 } && std::unsigned_integral<Word>;
 

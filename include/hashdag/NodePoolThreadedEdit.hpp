@@ -25,15 +25,15 @@ private:
 	}
 
 	template <lf::context Context, Editor<Word> Editor_T>
-	inline lf::basic_task<void, Context> lf_edit_node(const Editor_T *p_editor, NodePointer<Word> *p_node_ptr,
+	inline lf::basic_task<void, Context> lf_edit_node(const Editor_T &editor, NodePointer<Word> *p_node_ptr,
 	                                                  NodeCoord<Word> coord, auto *p_state, Word max_task_level) {
 		NodePointer<Word> node_ptr = *p_node_ptr;
 		if (coord.level == get_node_pool().m_config.GetNodeLevels() - 1) {
-			*p_node_ptr = get_node_pool().template edit_leaf<true>(*p_editor, node_ptr, coord, p_state);
+			*p_node_ptr = get_node_pool().template edit_leaf<true>(editor, node_ptr, coord, *p_state);
 			co_return;
 		}
 		if (coord.level >= max_task_level) {
-			*p_node_ptr = get_node_pool().template edit_node<true>(*p_editor, node_ptr, coord, p_state);
+			*p_node_ptr = get_node_pool().template edit_node<true>(editor, node_ptr, coord, *p_state);
 			co_return;
 		}
 
@@ -53,7 +53,7 @@ private:
 			NodeCoord<Word> child_coord = coord.GetChildCoord(i);
 			auto &child_state = child_states[i];
 			get_node_pool().edit_switch(
-			    *p_editor, child_ptr, child_coord, &child_state, p_state,
+			    editor, child_ptr, child_coord, child_state, *p_state,
 			    [&](NodePointer<Word> new_child_ptr) { new_children[i] = new_child_ptr; },
 			    [&]() { fork_indices[fork_count++] = i; });
 		}
@@ -68,17 +68,17 @@ private:
 
 				new_children[i] = child_ptr;
 				if (count == fork_count)
-					co_await lf_edit_node<Context>(p_editor, new_children.data() + i, child_coord, &child_state,
+					co_await lf_edit_node<Context>(editor, new_children.data() + i, child_coord, &child_state,
 					                               max_task_level);
 				else
-					co_await lf_edit_node<Context>(p_editor, new_children.data() + i, child_coord, &child_state,
+					co_await lf_edit_node<Context>(editor, new_children.data() + i, child_coord, &child_state,
 					                               max_task_level)
 					    .fork();
 			}
 			co_await lf::join();
 		}
 
-		p_editor->JoinNode(get_node_pool().m_config, coord, p_state, child_states);
+		editor.JoinNode(get_node_pool().m_config, coord, *p_state, child_states);
 
 		bool changed = false;
 		for (Word i = 0; i < 8; ++i) {
@@ -107,13 +107,12 @@ public:
 	                         std::invocable<NodePointer<Word>, typename Editor_T::NodeState> auto &&on_edit_done) {
 		get_node_pool().make_filled_node_pointers();
 
-		typename Editor_T::NodeState state{};
+		typename Editor_T::NodeState state{}, parent_state{};
 		root_ptr = get_node_pool().template edit_switch<Editor_T>(
-		    editor, root_ptr, {}, &state, (const typename Editor_T::NodeState *)nullptr,
-		    [&](NodePointer<Word> new_root_ptr) { return new_root_ptr; },
+		    editor, root_ptr, {}, state, parent_state, [&](NodePointer<Word> new_root_ptr) { return new_root_ptr; },
 		    [&]() {
-			    p_lf_pool->schedule(lf_edit_node<lf::busy_pool::context>(&editor, &root_ptr, NodeCoord<Word>{}, &state,
-			                                                             max_task_level));
+			    p_lf_pool->schedule(
+			        lf_edit_node<lf::busy_pool::context>(editor, &root_ptr, NodeCoord<Word>{}, &state, max_task_level));
 			    return root_ptr;
 		    });
 		return on_edit_done(root_ptr, std::move(state));

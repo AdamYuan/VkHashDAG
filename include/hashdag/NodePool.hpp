@@ -316,7 +316,7 @@ public:
 
 	template <bool ThreadSafe>
 	inline NodePointer<Word> edit_leaf(const Editor<Word> auto &editor, NodePointer<Word> leaf_ptr,
-	                                   const NodeCoord<Word> &coord, auto *p_state) {
+	                                   const NodeCoord<Word> &coord, auto &state) {
 		using LeafArray = std::array<Word, Config<Word>::kWordsPerLeaf>;
 
 		LeafArray leaf = get_leaf_array(leaf_ptr);
@@ -327,13 +327,13 @@ public:
 			constexpr Word kWordBits = std::countr_zero(sizeof(Word) * 8), kWordMask = (1u << kWordBits) - 1u;
 
 			bool voxel = (leaf[i >> kWordBits] >> (i & kWordMask)) & 1u;
-			bool new_voxel = editor.EditVoxel(m_config, coord.GetLeafCoord(i), voxel, p_state);
+			bool new_voxel = editor.EditVoxel(m_config, coord.GetLeafCoord(i), voxel, state);
 
 			changed |= new_voxel != voxel;
 			leaf[i >> kWordBits] ^= (Word(new_voxel != voxel) << (i & kWordMask));
 		}
 
-		editor.JoinLeaf(m_config, coord, p_state);
+		editor.JoinLeaf(m_config, coord, state);
 
 		return changed ? (leaf == LeafArray{0} ? NodePointer<Word>::Null()
 		                                       : upsert_leaf<ThreadSafe>(coord.level, leaf, leaf_ptr))
@@ -342,9 +342,9 @@ public:
 
 	template <Editor<Word> Editor_T>
 	inline auto edit_switch(const Editor_T &editor, NodePointer<Word> node_ptr, const NodeCoord<Word> &coord,
-	                        auto *p_state, const auto *p_parent_state, auto &&edit_terminate_func,
+	                        auto &state, const auto &parent_state, auto &&edit_terminate_func,
 	                        auto &&edit_proceed_func) const {
-		auto edit_type = editor.EditNode(m_config, coord, node_ptr, p_state, p_parent_state);
+		auto edit_type = editor.EditNode(m_config, coord, node_ptr, state, parent_state);
 		if (edit_type == EditType::kClear)
 			return edit_terminate_func(NodePointer<Word>::Null());
 		else if (edit_type == EditType::kFill)
@@ -359,9 +359,9 @@ public:
 
 	template <bool ThreadSafe, Editor<Word> Editor_T>
 	inline NodePointer<Word> edit_node(const Editor_T &editor, NodePointer<Word> node_ptr, const NodeCoord<Word> &coord,
-	                                   typename Editor_T::NodeState *p_state) {
+	                                   typename Editor_T::NodeState &state) {
 		if (coord.level == m_config.GetNodeLevels() - 1)
-			return edit_leaf<ThreadSafe>(editor, node_ptr, coord, p_state);
+			return edit_leaf<ThreadSafe>(editor, node_ptr, coord, state);
 
 		std::array<Word, 9> unpacked_node = get_unpacked_node_array(node_ptr);
 		Word &child_mask = unpacked_node[0];
@@ -375,16 +375,16 @@ public:
 			NodePointer<Word> child_ptr{children[i]};
 			auto &child_state = child_states[i];
 			NodePointer<Word> new_child_ptr = edit_switch(
-			    editor, child_ptr, child_coord, &child_state, p_state,
+			    editor, child_ptr, child_coord, child_state, state,
 			    [&](NodePointer<Word> child_node_ptr) { return child_node_ptr; },
-			    [&]() { return edit_node<ThreadSafe>(editor, child_ptr, child_coord, &child_state); });
+			    [&]() { return edit_node<ThreadSafe>(editor, child_ptr, child_coord, child_state); });
 
 			changed |= new_child_ptr != child_ptr;
 			children[i] = *new_child_ptr;
 			child_mask ^= (Word{bool(new_child_ptr) != bool(child_ptr)} << i); // Flip if occurrence changed
 		}
 
-		editor.JoinNode(m_config, coord, p_state, child_states);
+		editor.JoinNode(m_config, coord, state, child_states);
 
 		return changed
 		           ? (child_mask
@@ -440,11 +440,10 @@ public:
 	inline auto Edit(NodePointer<Word> root_ptr, const Editor_T &editor,
 	                 std::invocable<NodePointer<Word>, typename Editor_T::NodeState> auto &&on_edit_done) {
 		make_filled_node_pointers();
-		typename Editor_T::NodeState state{};
+		typename Editor_T::NodeState state{}, parent_state{};
 		root_ptr = edit_switch(
-		    editor, root_ptr, {}, &state, (const typename Editor_T::NodeState *)nullptr,
-		    [&](NodePointer<Word> new_root_ptr) { return new_root_ptr; },
-		    [&]() { return edit_node<false>(editor, root_ptr, {}, &state); });
+		    editor, root_ptr, {}, state, parent_state, [&](NodePointer<Word> new_root_ptr) { return new_root_ptr; },
+		    [&]() { return edit_node<false>(editor, root_ptr, {}, state); });
 		return on_edit_done(root_ptr, std::move(state));
 	}
 	template <Editor<Word> Editor_T> inline NodePointer<Word> Edit(NodePointer<Word> root_ptr, const Editor_T &editor) {

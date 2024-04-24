@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <concepts>
+#include <iostream>
 #include <vector>
 
 namespace hashdag {
@@ -170,7 +171,6 @@ public:
 
 		auto src_word_it = src.m_bits.begin() + (src_begin >> kWordMaskBits);
 		if (bit_offset == src_bit_offset) {
-			// printf("=\n");
 			m_bits.back() |= Word(*src_word_it >> bit_offset) << bit_offset;
 			m_bits.insert(m_bits.end(), src_word_it + 1, src_word_it + 1 + word_count);
 		} else if (src_bit_offset < bit_offset) {
@@ -356,21 +356,29 @@ public:
 		uint32_t voxel_index = GetVoxelIndex() + count;
 		uint32_t macro_id = voxel_index >> kVoxelBitsPerMacroBlock,
 		         macro_offset = voxel_index & (kVoxelsPerMacroBlock - 1u);
-		// '+ 2' to skip the next block
-		auto block_begin = m_chunk.m_block_headers.begin() +
-		                   (m_macro_id == macro_id ? m_block_id + 2 : m_chunk.m_macro_blocks[macro_id].first_block),
-		     block_end = macro_id + 1 == m_chunk.m_macro_blocks.size()
-		                     ? m_chunk.m_block_headers.end()
-		                     : m_chunk.m_block_headers.begin() + m_chunk.m_macro_blocks[macro_id + 1].first_block;
-		assert(block_begin <= block_end);
-		auto block_it = std::upper_bound(block_begin, block_end, macro_offset,
-		                                 [](uint32_t i, VBRBlockHeader b) { return i < b.GetVoxelIndexOffset(); }) -
-		                1;
-		uint32_t block_id = block_it - m_chunk.m_block_headers.begin();
+		if (macro_id >= m_chunk.m_macro_blocks.size()) {
+			m_macro_id = macro_id;
+			m_block_id = 0;
+			m_block_offset = 0;
+		} else {
+			auto block_begin = m_chunk.m_block_headers.begin() + m_chunk.m_macro_blocks[macro_id].first_block + 1,
+			     block_end = macro_id + 1 == m_chunk.m_macro_blocks.size()
+			                     ? m_chunk.m_block_headers.end()
+			                     : m_chunk.m_block_headers.begin() + m_chunk.m_macro_blocks[macro_id + 1].first_block;
+			assert(block_begin <= block_end);
+			if (block_begin > block_end) {
+				printf("%zu, %zu %u\n", block_begin - m_chunk.m_block_headers.begin(),
+				       block_end - m_chunk.m_block_headers.begin(), voxel_index);
+			}
+			auto block_it = std::upper_bound(block_begin, block_end, macro_offset,
+			                                 [](uint32_t i, VBRBlockHeader b) { return i < b.GetVoxelIndexOffset(); }) -
+			                1;
+			uint32_t block_id = block_it - m_chunk.m_block_headers.begin();
 
-		m_macro_id = macro_id;
-		m_block_id = block_id;
-		m_block_offset = macro_offset - m_chunk.m_block_headers[block_id].GetVoxelIndexOffset();
+			m_macro_id = macro_id;
+			m_block_id = block_id;
+			m_block_offset = macro_offset - m_chunk.m_block_headers[block_id].GetVoxelIndexOffset();
+		}
 	}
 };
 
@@ -439,14 +447,14 @@ private:
 	inline void copy(const VBRChunkIterator<Word, SrcContainer> &iterator, uint32_t count) {
 		VBRBlockHeader block = iterator.GetBlockHeader();
 		append(block.colors, block.GetBitsPerWeight(), count, [&](uint32_t offset, uint32_t count) {
-			this->m_weight_bits.Copy(iterator.GetChunk().m_weight_bits,
+			/* this->m_weight_bits.Copy(iterator.GetChunk().m_weight_bits,
 			                         iterator.GetWeightIndex() + offset * block.GetBitsPerWeight(),
-			                         count * block.GetBitsPerWeight());
+			                         count * block.GetBitsPerWeight()); */
 		});
 	}
 	inline void push(VBRColor color, uint32_t count) {
 		append(color.GetColors(), color.GetBitsPerWeight(), count, [this, color](uint32_t offset, uint32_t count) {
-			this->m_weight_bits.Push(color.GetWeight(), color.GetBitsPerWeight(), count);
+			// this->m_weight_bits.Push(color.GetWeight(), color.GetBitsPerWeight(), count);
 		});
 	}
 
@@ -475,13 +483,13 @@ public:
 		if (!m_src_iterator.Empty())
 			m_src_iterator.LongJump(voxel_count);
 	}
-	inline void Edit(std::invocable<VBRColor *> auto &&editor) {
+	inline void Edit(std::invocable<VBRColor &> auto &&editor) {
 		VBRColor color = {};
 		if (!m_src_iterator.Empty())
 			m_src_iterator.Next(
 			    [&](const VBRChunkIterator<Word, SrcContainer> &iterator) { color = iterator.GetColor(); });
-		editor(&color);
-		push(color, 1u);
+		editor(color);
+		push({}, 1u);
 	}
 };
 
