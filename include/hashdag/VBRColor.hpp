@@ -428,8 +428,7 @@ private:
 			if (colors != m_block_headers.back().colors ||
 			    bits_per_weight != m_block_headers.back().GetBitsPerWeight()) {
 				m_block_headers.emplace_back(colors, voxel_index & (kVoxelsPerMacroBlock - 1u), bits_per_weight,
-				                             uint32_t(m_weight_bits.GetBitCount()) -
-				                                 m_macro_blocks.back().weight_start);
+				                             weight_start - m_macro_blocks.back().weight_start);
 			}
 
 			uint32_t append_voxel_count =
