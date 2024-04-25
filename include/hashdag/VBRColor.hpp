@@ -411,8 +411,7 @@ private:
 	VBRChunkIterator<Word, SrcContainer> m_src_iterator;
 	uint32_t m_voxel_count = 0;
 
-	inline void append(uint32_t colors, uint32_t bits_per_weight, uint32_t voxel_count,
-	                   std::invocable<uint32_t, uint32_t> auto &&on_push) {
+	inline void append(uint32_t colors, uint32_t bits_per_weight, uint32_t voxel_count, uint32_t &weight_start) {
 		for (uint32_t i = 0; i < voxel_count;) {
 			uint32_t voxel_index = m_voxel_count + i;
 
@@ -420,7 +419,7 @@ private:
 			if (macro_id >= m_macro_blocks.size()) {
 				m_macro_blocks.push_back(VBRMacroBlock{
 				    .first_block = uint32_t(m_block_headers.size()),
-				    .weight_start = uint32_t(m_weight_bits.GetBitCount()),
+				    .weight_start = weight_start,
 				});
 				// assert(voxel_index % kVoxelsPerMacroBlock == 0);
 				m_block_headers.emplace_back(colors, 0, bits_per_weight, 0);
@@ -435,27 +434,26 @@ private:
 
 			uint32_t append_voxel_count =
 			    std::min(voxel_count - i, ((macro_id + 1u) << kVoxelBitsPerMacroBlock) - voxel_index);
-
-			on_push(i, append_voxel_count);
-
+			weight_start += append_voxel_count * bits_per_weight;
 			i += append_voxel_count;
 		}
 
 		m_voxel_count += voxel_count;
 	}
 
-	inline void copy(const VBRChunkIterator<Word, SrcContainer> &iterator, uint32_t count) {
-		VBRBlockHeader block = iterator.GetBlockHeader();
-		append(block.colors, block.GetBitsPerWeight(), count, [&](uint32_t offset, uint32_t count) {
-			/* this->m_weight_bits.Copy(iterator.GetChunk().m_weight_bits,
-			                         iterator.GetWeightIndex() + offset * block.GetBitsPerWeight(),
-			                         count * block.GetBitsPerWeight()); */
+	inline void copy(uint32_t count) {
+		uint32_t weight_start = m_weight_bits.GetBitCount(), prev_weight_start = weight_start,
+		         src_weight_start = m_src_iterator.GetWeightIndex();
+		m_src_iterator.Jump(count, [&](const VBRChunkIterator<Word, SrcContainer> &iterator, uint32_t count) {
+			VBRBlockHeader block = iterator.GetBlockHeader();
+			append(block.colors, block.GetBitsPerWeight(), count, weight_start);
 		});
+		m_weight_bits.Copy(m_src_iterator.GetChunk().m_weight_bits, src_weight_start, weight_start - prev_weight_start);
 	}
 	inline void push(VBRColor color, uint32_t count) {
-		append(color.GetColors(), color.GetBitsPerWeight(), count, [this, color](uint32_t offset, uint32_t count) {
-			// this->m_weight_bits.Push(color.GetWeight(), color.GetBitsPerWeight(), count);
-		});
+		uint32_t weight_start = m_weight_bits.GetBitCount();
+		append(color.GetColors(), color.GetBitsPerWeight(), count, weight_start);
+		m_weight_bits.Push(color.GetWeight(), color.GetBitsPerWeight(), count);
 	}
 
 public:
@@ -474,9 +472,7 @@ public:
 			push(VBRColor{}, voxel_count);
 			return;
 		}
-		m_src_iterator.Jump(voxel_count, [&](const VBRChunkIterator<Word, SrcContainer> &iterator, uint32_t count) {
-			copy(iterator, count);
-		});
+		copy(voxel_count);
 	}
 	inline void Push(VBRColor color, uint32_t voxel_count) {
 		push(color, voxel_count);
