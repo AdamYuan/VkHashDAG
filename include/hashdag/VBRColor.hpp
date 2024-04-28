@@ -92,21 +92,24 @@ public:
 	inline VBRBitset<Word, std::vector> Flush() { return VBRBitset<Word, std::vector>{std::move(m_bits)}; }
 
 	// unit bits = 0, 1, 2, 3 is guaranteed for VBR
-	inline void Push(Word word, Word bits, std::size_t count = 1) {
+	inline void Push(Word word, Word bits) {
+		if (bits == 0)
+			return;
+		Word bit_offset = m_bit_count & kWordMask;
+		if (bit_offset == 0)
+			m_bits.emplace_back();
+		m_bits.back() |= word << bit_offset;
+		if (bit_offset + bits > kWordBits)
+			m_bits.push_back(word >> (kWordBits - bit_offset));
+		m_bit_count += bits;
+	}
+	inline void Push(Word word, Word bits, std::size_t count) {
 		if (count == 0 || bits == 0)
 			return;
 
 		Word bit_offset = m_bit_count & kWordMask;
 		if (bit_offset == 0)
 			m_bits.emplace_back();
-
-		if (count == 1) {
-			m_bits.back() |= word << bit_offset;
-			if (bit_offset + bits > kWordBits)
-				m_bits.push_back(word >> (kWordBits - bit_offset));
-			m_bit_count += bits;
-			return;
-		}
 
 		Word full_word = word | (word << bits);
 		for (Word i = 1; (bits << i) < kWordBits; ++i)
@@ -440,6 +443,28 @@ private:
 		m_voxel_count += voxel_count;
 	}
 
+	inline void append_one(uint32_t colors, uint32_t bits_per_weight, uint32_t &weight_start) {
+		uint32_t voxel_index = m_voxel_count;
+
+		uint32_t macro_id = voxel_index >> kVoxelBitsPerMacroBlock;
+		if (macro_id >= m_macro_blocks.size()) {
+			m_macro_blocks.push_back(VBRMacroBlock{
+			    .first_block = uint32_t(m_block_headers.size()),
+			    .weight_start = weight_start,
+			});
+			// assert(voxel_index % kVoxelsPerMacroBlock == 0);
+			m_block_headers.emplace_back(colors, 0, bits_per_weight, 0);
+		}
+
+		if (colors != m_block_headers.back().colors || bits_per_weight != m_block_headers.back().GetBitsPerWeight()) {
+			m_block_headers.emplace_back(colors, voxel_index & (kVoxelsPerMacroBlock - 1u), bits_per_weight,
+			                             weight_start - m_macro_blocks.back().weight_start);
+		}
+		weight_start += bits_per_weight;
+
+		++m_voxel_count;
+	}
+
 	inline void copy(uint32_t count) {
 		uint32_t weight_start = m_weight_bits.GetBitCount(), prev_weight_start = weight_start,
 		         src_weight_start = m_src_iterator.GetWeightIndex();
@@ -453,6 +478,11 @@ private:
 		uint32_t weight_start = m_weight_bits.GetBitCount();
 		append(color.GetColors(), color.GetBitsPerWeight(), count, weight_start);
 		m_weight_bits.Push(color.GetWeight(), color.GetBitsPerWeight(), count);
+	}
+	inline void push_one(VBRColor color) {
+		uint32_t weight_start = m_weight_bits.GetBitCount();
+		append_one(color.GetColors(), color.GetBitsPerWeight(), weight_start);
+		m_weight_bits.Push(color.GetWeight(), color.GetBitsPerWeight());
 	}
 
 public:
@@ -484,7 +514,7 @@ public:
 			m_src_iterator.Next(
 			    [&](const VBRChunkIterator<Word, SrcContainer> &iterator) { color = iterator.GetColor(); });
 		editor(color);
-		push(color, 1u);
+		push_one(color);
 	}
 };
 
