@@ -27,6 +27,8 @@ public:
 	inline VBRColor(R5G6B5Color left_color, R5G6B5Color right_color, uint8_t weight, uint8_t bits_per_weight)
 	    : m_colors(left_color.GetData() | right_color.GetData() << 16u), m_weight{weight},
 	      m_bits_per_weight{bits_per_weight} {}
+	inline VBRColor(uint32_t colors, uint8_t weight, uint8_t bits_per_weight)
+	    : m_colors(colors), m_weight{weight}, m_bits_per_weight{bits_per_weight} {}
 
 	inline glm::vec3 Get() const {
 		return m_bits_per_weight == 0 ? RGB8Color{m_colors}.Get()
@@ -414,6 +416,16 @@ private:
 	VBRChunkIterator<Word, SrcContainer> m_src_iterator;
 	uint32_t m_voxel_count = 0;
 
+	struct Entry {
+		uint32_t colors;
+		uint8_t weight, bits_per_weight;
+		bool copy;
+		uint8_t count_bits;
+		inline VBRColor GetColor() const { return VBRColor{colors, weight, bits_per_weight}; }
+	};
+	static_assert(sizeof(Entry) == 8);
+	std::vector<Entry> m_entries;
+
 	inline void append(uint32_t colors, uint32_t bits_per_weight, uint32_t voxel_count, uint32_t &weight_start) {
 		for (uint32_t i = 0; i < voxel_count;) {
 			uint32_t voxel_index = m_voxel_count + i;
@@ -496,25 +508,34 @@ public:
 		return VBRChunk<Word, std::vector>{std::move(m_macro_blocks), std::move(m_block_headers),
 		                                   m_weight_bits.Flush()};
 	}
-	inline void Copy(uint32_t voxel_count) {
-		if (m_src_iterator.Empty()) {
-			push(VBRColor{}, voxel_count);
-			return;
+	inline void Copy(uint8_t count_bits) {
+		m_entries.push_back(Entry{.copy = true, .count_bits = count_bits});
+		/* if (m_src_iterator.Empty()) {
+		    push(VBRColor{}, voxel_count);
+		    return;
 		}
-		copy(voxel_count);
+		copy(voxel_count); */
 	}
-	inline void Push(VBRColor color, uint32_t voxel_count) {
-		push(color, voxel_count);
+	inline void Push(VBRColor color, uint8_t count_bits) {
+		m_entries.push_back(Entry{.colors = color.GetColors(),
+		                          .weight = color.GetWeight(),
+		                          .bits_per_weight = color.GetBitsPerWeight(),
+		                          .count_bits = count_bits});
+		/* push(color, voxel_count);
 		if (!m_src_iterator.Empty())
-			m_src_iterator.LongJump(voxel_count);
+		    m_src_iterator.LongJump(voxel_count); */
 	}
 	inline void Edit(std::invocable<VBRColor &> auto &&editor) {
 		VBRColor color = {};
-		if (!m_src_iterator.Empty())
-			m_src_iterator.Next(
-			    [&](const VBRChunkIterator<Word, SrcContainer> &iterator) { color = iterator.GetColor(); });
+		/* if (!m_src_iterator.Empty())
+		    m_src_iterator.Next(
+		        [&](const VBRChunkIterator<Word, SrcContainer> &iterator) { color = iterator.GetColor(); }); */
 		editor(color);
-		push_one(color);
+		// push_one(color);
+		m_entries.push_back(Entry{.colors = color.GetColors(),
+		                          .weight = color.GetWeight(),
+		                          .bits_per_weight = color.GetBitsPerWeight(),
+		                          .count_bits = 0});
 	}
 };
 
