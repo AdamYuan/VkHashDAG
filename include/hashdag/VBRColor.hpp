@@ -506,7 +506,7 @@ public:
 	inline void Push(VBRColor color, uint32_t voxel_count) {
 		push(color, voxel_count);
 		if (!m_src_iterator.Empty())
-			m_src_iterator.LongJump(voxel_count);
+			m_src_iterator.Jump(voxel_count);
 	}
 	inline void Edit(std::invocable<VBRColor &> auto &&editor) {
 		VBRColor color = {};
