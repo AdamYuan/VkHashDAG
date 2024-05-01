@@ -15,7 +15,7 @@
 #include <shared_mutex>
 #include <span>
 
-class DAGColorOctree {
+class DAGColorPool {
 private:
 	template <typename T> using ConstSpan = std::span<const T>;
 
@@ -65,7 +65,7 @@ private:
 	Pointer m_root = {};
 
 public:
-	inline explicit DAGColorOctree(uint32_t leaf_level) : m_leaf_level{leaf_level} {}
+	inline explicit DAGColorPool(uint32_t leaf_level) : m_leaf_level{leaf_level} {}
 
 	inline Pointer GetNode(Pointer ptr, auto idx) const {
 		return ptr.GetTag() == Pointer::Tag::kNode
@@ -105,6 +105,6 @@ public:
 	inline void SetRoot(Pointer root) { m_root = root; }
 };
 
-static_assert(hashdag::VBROctree<DAGColorOctree, uint32_t>);
+static_assert(hashdag::VBROctree<DAGColorPool, uint32_t>);
 
 #endif // VKHASHDAG_DAGCOLOROCTREE_HPP

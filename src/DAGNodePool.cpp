@@ -78,12 +78,12 @@ void DAGNodePool::create_descriptor() {
 	vkUpdateDescriptorSets(m_device_ptr->GetHandle(), 1, &write, 0, nullptr);
 }
 
-template <typename Func> inline long ns(Func &&func) {
+/* template <typename Func> inline long ns(Func &&func) {
 	auto begin = std::chrono::high_resolution_clock::now();
 	func();
 	auto end = std::chrono::high_resolution_clock::now();
 	return std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count();
-}
+} */
 
 bool DAGNodePool::Flush(const myvk::SemaphoreGroup &wait_semaphores, const myvk::SemaphoreGroup &signal_semaphores,
                         const myvk::Ptr<myvk::Fence> &fence) {

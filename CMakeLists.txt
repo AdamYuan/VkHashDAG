@@ -41,8 +41,9 @@ add_executable(VkHashDAG
         src/GPSQueueSelector.cpp
         src/Camera.cpp
         src/DAGNodePool.cpp
-        src/DAGColorOctree.cpp
+        src/DAGColorPool.cpp
         src/DAGRenderer.cpp
+        src/VkPagedBuffer.cpp
 )
 target_include_directories(VkHashDAG PRIVATE include)
 target_link_libraries(VkHashDAG PRIVATE

@@ -8,7 +8,7 @@
 #include <hashdag/VBREditor.hpp>
 
 #include "Camera.hpp"
-#include "DAGColorOctree.hpp"
+#include "DAGColorPool.hpp"
 #include "DAGNodePool.hpp"
 #include "DAGRenderer.hpp"
 #include "GPSQueueSelector.hpp"
@@ -190,21 +190,21 @@ int main() {
 
 	auto dag_node_pool = myvk::MakePtr<DAGNodePool>(generic_queue, sparse_queue,
 	                                                hashdag::Config<uint32_t>::MakeDefault(16, 9, 14, 2, 7, 11));
-	auto dag_color_octree = myvk::MakePtr<DAGColorOctree>(10);
+	auto dag_color_pool = myvk::MakePtr<DAGColorPool>(10);
 
 	auto edit_ns = ns([&]() {
 		const auto edit = [&](hashdag::VBREditor<uint32_t> auto &&vbr_editor) {
 			using Editor_T = std::decay_t<decltype(vbr_editor)>;
 			dag_node_pool->ThreadedEdit(&busy_pool, dag_node_pool->GetRoot(),
-			                            hashdag::VBREditorWrapper<uint32_t, Editor_T, DAGColorOctree>{
+			                            hashdag::VBREditorWrapper<uint32_t, Editor_T, DAGColorPool>{
 			                                .editor = std::forward<Editor_T>(vbr_editor),
-			                                .p_octree = dag_color_octree.get(),
-			                                .octree_root = dag_color_octree->GetRoot(),
+			                                .p_octree = dag_color_pool.get(),
+			                                .octree_root = dag_color_pool->GetRoot(),
 			                            },
-			                            dag_color_octree->GetLeafLevel(),
+			                            dag_color_pool->GetLeafLevel(),
 			                            [&](hashdag::NodePointer<uint32_t> root_ptr, auto &&state) {
 				                            dag_node_pool->SetRoot(root_ptr);
-				                            dag_color_octree->SetRoot(state.octree_node);
+				                            dag_color_pool->SetRoot(state.octree_node);
 			                            });
 		};
 		edit(AABBEditor{
@@ -229,7 +229,7 @@ int main() {
 		});
 	});
 	printf("edit cost %lf ms\n", (double)edit_ns / 1000000.0);
-	printf("root = %d\n", dag_color_octree->GetRoot().GetData());
+	printf("root = %d\n", dag_color_pool->GetRoot().GetData());
 	auto flush_ns = ns([&]() {
 		auto fence = myvk::Fence::Create(device);
 		if (dag_node_pool->Flush({}, {}, fence))
