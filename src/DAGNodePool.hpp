@@ -20,6 +20,8 @@
 #include <myvk/Fence.hpp>
 #include <myvk/Semaphore.hpp>
 
+#include "VkPagedBuffer.hpp"
+
 class DAGNodePool final
     : public hashdag::NodePoolBase<DAGNodePool, uint32_t>,
       public hashdag::NodePoolTraversal<DAGNodePool, uint32_t>,
@@ -81,22 +83,13 @@ private:
 	myvk::Ptr<myvk::Device> m_device_ptr;
 	myvk::Ptr<myvk::Queue> m_main_queue_ptr, m_sparse_queue_ptr;
 
-	VkBuffer m_gpu_buffer{VK_NULL_HANDLE};
-	VkDeviceSize m_gpu_buffer_size{};
-	VkMemoryRequirements m_gpu_page_memory_requirements;
-	struct GPUPage {
-		VmaAllocation allocation;
-		uint32_t *p_mapped_data;
-	};
-	std::unique_ptr<GPUPage[]> m_gpu_pages;
-	uint32_t m_total_gpu_pages, m_page_bits_per_gpu_page;
+	myvk::Ptr<VkPagedBuffer> m_paged_buffer;
+	uint32_t m_page_bits_per_gpu_page;
 
 	myvk::Ptr<myvk::DescriptorSet> m_descriptor_set;
 
 	void create_buffer();
 	void create_descriptor();
-	void create_gpu_pages();
-	void destroy_buffer();
 
 public:
 	inline DAGNodePool(const myvk::Ptr<myvk::Queue> &main_queue_ptr, const myvk::Ptr<myvk::Queue> &sparse_queue_ptr,
@@ -108,10 +101,9 @@ public:
 		m_pages = std::make_unique<std::unique_ptr<uint32_t[]>[]>(GetConfig().GetTotalPages());
 
 		create_buffer();
-		create_gpu_pages();
 		create_descriptor();
 	}
-	inline ~DAGNodePool() final { destroy_buffer(); }
+	inline ~DAGNodePool() final = default;
 
 	// return true if need to insert missing pages
 	bool Flush(const myvk::SemaphoreGroup &wait_semaphores, const myvk::SemaphoreGroup &signal_semaphores,
