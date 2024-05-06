@@ -265,11 +265,6 @@ public:
 	      m_weight_bits{std::move(weight_bits)} {}
 
 	inline bool Empty() const { return m_macro_blocks.empty(); }
-
-	template <template <typename> typename DstContainer = Container>
-	inline VBRChunkIterator<Word, DstContainer> Begin() const;
-	template <template <typename> typename DstContainer = Container>
-	inline VBRChunkIterator<Word, DstContainer> Find(uint32_t voxel_index) const;
 };
 
 template <std::unsigned_integral Word, template <typename> typename Container> class VBRChunkIterator {
@@ -347,56 +342,7 @@ public:
 			m_block_offset += count;
 		}
 	}
-	inline void LongJump(uint32_t count) {
-		if (count == 0)
-			return;
-		if (is_last_block() || m_block_offset + count < get_block_size()) {
-			// Still in m_block_id
-			m_block_offset += count;
-			return;
-		}
-		// Not in m_block_id
-		uint32_t voxel_index = GetVoxelIndex() + count;
-		uint32_t macro_id = voxel_index >> kVoxelBitsPerMacroBlock,
-		         macro_offset = voxel_index & (kVoxelsPerMacroBlock - 1u);
-		if (macro_id >= m_chunk.m_macro_blocks.size()) {
-			m_macro_id = macro_id;
-			m_block_id = 0;
-			m_block_offset = 0;
-		} else {
-			auto block_begin = m_chunk.m_block_headers.begin() + m_chunk.m_macro_blocks[macro_id].first_block + 1,
-			     block_end = macro_id + 1 == m_chunk.m_macro_blocks.size()
-			                     ? m_chunk.m_block_headers.end()
-			                     : m_chunk.m_block_headers.begin() + m_chunk.m_macro_blocks[macro_id + 1].first_block;
-			assert(block_begin <= block_end);
-			if (block_begin > block_end) {
-				printf("%zu, %zu %u\n", block_begin - m_chunk.m_block_headers.begin(),
-				       block_end - m_chunk.m_block_headers.begin(), voxel_index);
-			}
-			auto block_it = std::upper_bound(block_begin, block_end, macro_offset,
-			                                 [](uint32_t i, VBRBlockHeader b) { return i < b.GetVoxelIndexOffset(); }) -
-			                1;
-			uint32_t block_id = block_it - m_chunk.m_block_headers.begin();
-
-			m_macro_id = macro_id;
-			m_block_id = block_id;
-			m_block_offset = macro_offset - m_chunk.m_block_headers[block_id].GetVoxelIndexOffset();
-		}
-	}
 };
-
-template <std::unsigned_integral Word, template <typename> typename Container>
-template <template <typename> typename DstContainer>
-VBRChunkIterator<Word, DstContainer> VBRChunk<Word, Container>::Begin() const {
-	return VBRChunkIterator<Word, DstContainer>(*this);
-}
-template <std::unsigned_integral Word, template <typename> typename Container>
-template <template <typename> typename DstContainer>
-VBRChunkIterator<Word, DstContainer> VBRChunk<Word, Container>::Find(uint32_t voxel_index) const {
-	auto it = VBRChunkIterator<Word, DstContainer>(*this);
-	it.LongJump(voxel_index);
-	return it;
-}
 
 template <std::unsigned_integral Word, template <typename> typename SrcContainer> class VBRChunkWriter {
 #ifdef HASHDAG_TEST

@@ -184,13 +184,22 @@ int main() {
 		render_pass = myvk::RenderPass::Create(device, state);
 	}
 
-	// auto dag_node_pool =
-	//     myvk::MakePtr<DAGNodePool>(generic_queue, sparse_queue, hashdag::Config<uint32_t>::MakeDefault(16, 9, 11,
-	//     0));
-
 	auto dag_node_pool = myvk::MakePtr<DAGNodePool>(generic_queue, sparse_queue,
-	                                                hashdag::Config<uint32_t>::MakeDefault(16, 9, 14, 2, 7, 11));
-	auto dag_color_pool = myvk::MakePtr<DAGColorPool>(10);
+	                                                hashdag::DefaultConfig<uint32_t>{
+	                                                    .level_count = 17,
+	                                                    .top_level_count = 9,
+	                                                    .word_bits_per_page = 14,
+	                                                    .page_bits_per_bucket = 2,
+	                                                    .bucket_bits_per_top_level = 7,
+	                                                    .bucket_bits_per_bottom_level = 11,
+	                                                }());
+	auto dag_color_pool = myvk::MakePtr<DAGColorPool>(generic_queue, sparse_queue,
+	                                                  DAGColorPool::Config{
+	                                                      .level_count = 17,
+	                                                      .leaf_level = 10,
+	                                                      .node_bits_per_svo_page = 18,
+	                                                      .word_bits_per_vbr_page = 24,
+	                                                  });
 
 	auto edit_ns = ns([&]() {
 		const auto edit = [&](hashdag::VBREditor<uint32_t> auto &&vbr_editor) {

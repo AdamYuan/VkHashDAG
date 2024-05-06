@@ -4,9 +4,7 @@
 
 #include "DAGNodePool.hpp"
 
-#include <set>
-
-void DAGNodePool::create_buffer() {
+void DAGNodePool::create_vk_buffer() {
 	m_paged_buffer = VkPagedBuffer::Create(
 	    m_device_ptr, (VkDeviceSize)GetConfig().GetTotalWords() * sizeof(uint32_t),
 	    [this](const VkMemoryRequirements &mem_req) {
@@ -19,7 +17,7 @@ void DAGNodePool::create_buffer() {
 	    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, {m_main_queue_ptr, m_sparse_queue_ptr});
 }
 
-void DAGNodePool::create_descriptor() {
+void DAGNodePool::create_vk_descriptor() {
 	VkDescriptorSetLayoutBinding layout_binding = {};
 	layout_binding.binding = 0;
 	layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;

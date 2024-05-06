@@ -77,3 +77,12 @@ if (NOT MSVC)
     target_compile_options(VBRTest PRIVATE -fsanitize=address)
     target_link_options(VBRTest PRIVATE -fsanitize=address)
 endif ()
+
+add_executable(PagedVectorTest
+        test/paged_vec_test.cpp
+)
+target_include_directories(PagedVectorTest PRIVATE src)
+if (NOT MSVC)
+    target_compile_options(PagedVectorTest PRIVATE -fsanitize=address)
+    target_link_options(PagedVectorTest PRIVATE -fsanitize=address)
+endif ()

@@ -88,20 +88,20 @@ private:
 
 	myvk::Ptr<myvk::DescriptorSet> m_descriptor_set;
 
-	void create_buffer();
-	void create_descriptor();
+	void create_vk_buffer();
+	void create_vk_descriptor();
 
 public:
-	inline DAGNodePool(const myvk::Ptr<myvk::Queue> &main_queue_ptr, const myvk::Ptr<myvk::Queue> &sparse_queue_ptr,
-	                   const hashdag::Config<uint32_t> &config)
+	DAGNodePool(const myvk::Ptr<myvk::Queue> &main_queue_ptr, const myvk::Ptr<myvk::Queue> &sparse_queue_ptr,
+	            const hashdag::Config<uint32_t> &config)
 	    : hashdag::NodePoolBase<DAGNodePool, uint32_t>(config), m_device_ptr{main_queue_ptr->GetDevicePtr()},
 	      m_main_queue_ptr{main_queue_ptr}, m_sparse_queue_ptr{sparse_queue_ptr} {
 
 		m_bucket_words = std::make_unique<std::atomic_uint32_t[]>(GetConfig().GetTotalBuckets());
 		m_pages = std::make_unique<std::unique_ptr<uint32_t[]>[]>(GetConfig().GetTotalPages());
 
-		create_buffer();
-		create_descriptor();
+		create_vk_buffer();
+		create_vk_descriptor();
 	}
 	inline ~DAGNodePool() final = default;
 

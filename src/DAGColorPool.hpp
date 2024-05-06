@@ -9,9 +9,12 @@
 #include <hashdag/VBRColor.hpp>
 #include <hashdag/VBROctree.hpp>
 
+#include "VkPagedBuffer.hpp"
+#include "PagedVector.hpp"
+
 #include <array>
+#include <atomic>
 #include <mutex>
-#include <ranges>
 #include <shared_mutex>
 #include <span>
 
@@ -22,20 +25,31 @@ private:
 public:
 	using Writer = hashdag::VBRChunkWriter<uint32_t, ConstSpan>;
 	struct Pointer {
-		enum class Tag { kNode = 0, kLeaf, kColor, kNull };
+		static constexpr uint32_t kDataBits = 30u;
+		enum class Tag { kNull = 0, kNode, kLeaf, kColor };
 		uint32_t pointer;
 		inline Pointer() : Pointer(Tag::kNull, 0u) {}
-		inline Pointer(Tag tag, uint32_t data) : pointer{(static_cast<uint32_t>(tag) << 30u) | data} {}
-		inline Tag GetTag() const { return static_cast<Tag>(pointer >> 30u); }
-		inline uint32_t GetData() const { return pointer & 0x3fffffffu; }
+		inline Pointer(Tag tag, uint32_t data) : pointer{(static_cast<uint32_t>(tag) << kDataBits) | data} {}
+		inline Tag GetTag() const { return static_cast<Tag>(pointer >> kDataBits); }
+		inline uint32_t GetData() const { return pointer & ((1u << kDataBits) - 1u); }
 
 		inline bool operator==(const Pointer &r) const { return pointer == r.pointer; }
+	};
+	static_assert(sizeof(Pointer) == sizeof(uint32_t));
+
+	struct Config {
+		uint32_t level_count, leaf_level;
+		uint32_t node_bits_per_svo_page, word_bits_per_vbr_page;
 	};
 
 private:
 	using Node = std::array<Pointer, 8>;
+	static_assert(sizeof(Node) == 8 * sizeof(uint32_t));
+	static constexpr uint32_t kWordBitsPerNode = 3;
+
 	struct Leaf {
 		hashdag::VBRChunk<uint32_t, std::vector> chunk;
+		uint32_t vbr_offset{}, vbr_size{};
 	};
 
 	template <typename T> struct SafeVector {
@@ -58,14 +72,29 @@ private:
 			return idx;
 		}
 	};
+
 	SafeVector<Node> m_nodes;
 	SafeVector<Leaf> m_leaves;
 
-	uint32_t m_leaf_level{};
+	Config m_config;
 	Pointer m_root = {};
 
+	// Vulkan Stuff
+	myvk::Ptr<myvk::Device> m_device_ptr;
+	myvk::Ptr<myvk::Queue> m_main_queue_ptr, m_sparse_queue_ptr;
+	myvk::Ptr<VkPagedBuffer> m_svo_buffer, m_vbr_buffer;
+	void create_vk_buffer();
+
+	// Flush related Stuff
+	uint32_t m_flushed_nodes, m_flushed_leaves;
+
 public:
-	inline explicit DAGColorPool(uint32_t leaf_level) : m_leaf_level{leaf_level} {}
+	inline explicit DAGColorPool(const myvk::Ptr<myvk::Queue> &main_queue_ptr,
+	                             const myvk::Ptr<myvk::Queue> &sparse_queue_ptr, const Config &config)
+	    : m_device_ptr{main_queue_ptr->GetDevicePtr()}, m_main_queue_ptr{main_queue_ptr},
+	      m_sparse_queue_ptr{sparse_queue_ptr}, m_config{config} {
+		create_vk_buffer();
+	}
 
 	inline Pointer GetNode(Pointer ptr, auto idx) const {
 		return ptr.GetTag() == Pointer::Tag::kNode
@@ -99,7 +128,7 @@ public:
 			m_leaves.Write(ptr.GetData(), [&](Leaf &leaf) { leaf.chunk = writer.Flush(); });
 		return ptr;
 	}
-	inline uint32_t GetLeafLevel() const { return m_leaf_level; }
+	inline uint32_t GetLeafLevel() const { return m_config.leaf_level; }
 
 	inline Pointer GetRoot() const { return m_root; }
 	inline void SetRoot(Pointer root) { m_root = root; }

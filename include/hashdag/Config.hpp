@@ -48,21 +48,25 @@ template <std::unsigned_integral Word> struct Config {
 		if (config.word_bits_per_page < kMinWordBitsPerPage)
 			return false;
 		uint64_t bucket_count = 0;
-		for (Word c : config.buckets_each_level)
+		for (Word c : config.bucket_bits_each_level)
 			bucket_count += 1ULL << c;
 		uint64_t total_words = bucket_count * config.GetWordsPerBucket();
 		return total_words - 1 <= uint64_t(Word(-2));
 	}
-	inline static Config MakeDefault(uint32_t level_count, uint32_t top_level_count = 9,
-	                                 Word word_bits_per_page = 9,           // 512
-	                                 Word page_bits_per_bucket = 2,         // 4
-	                                 Word bucket_bits_per_top_level = 10,   // 1024
-	                                 Word bucket_bits_per_bottom_level = 16 // 65536
-	) {
+};
+
+template <std::unsigned_integral Word> struct DefaultConfig {
+	uint32_t level_count = 17, top_level_count = 9;
+	Word word_bits_per_page = 9;            // 512
+	Word page_bits_per_bucket = 2;          // 4
+	Word bucket_bits_per_top_level = 10;    // 1024
+	Word bucket_bits_per_bottom_level = 16; // 65536
+
+	inline Config<Word> operator()() const {
 		std::vector<Word> bucket_bits_each_level;
-		for (uint32_t l = 0; l < level_count; ++l)
-			bucket_bits_each_level.push_back(l <= top_level_count ? bucket_bits_per_top_level
-			                                                      : bucket_bits_per_bottom_level);
+		for (uint32_t l = 0; l + 1 < level_count; ++l)
+			bucket_bits_each_level.push_back(l < top_level_count ? bucket_bits_per_top_level
+			                                                     : bucket_bits_per_bottom_level);
 		return {.word_bits_per_page = word_bits_per_page,
 		        .page_bits_per_bucket = page_bits_per_bucket,
 		        .bucket_bits_each_level = std::move(bucket_bits_each_level)};
