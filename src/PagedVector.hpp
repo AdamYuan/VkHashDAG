@@ -36,11 +36,7 @@ public:
 	using Type = T;
 
 	inline PagedVectorBase() = default;
-	inline PagedVectorBase(std::size_t page_count, std::size_t bits_per_page)
-	    : m_page_count{page_count}, m_page_bits{bits_per_page}, m_page_size{std::size_t(1) << bits_per_page},
-	      m_page_mask{(std::size_t(1) << bits_per_page) - 1} {
-		m_pages = std::make_unique<std::unique_ptr<T[]>[]>(page_count);
-	}
+	inline PagedVectorBase(std::size_t page_count, std::size_t bits_per_page) { Reset(page_count, bits_per_page); }
 	inline std::optional<std::size_t> Append(std::invocable<T &> auto &&appender) {
 		std::size_t idx = static_cast<Derived *>(this)->append_one();
 		if (idx >= (m_page_count << m_page_bits))
@@ -85,6 +81,15 @@ public:
 			    writer(offset, std::span<T>(m_pages[page_id].get() + page_offset, page_size));
 		    });
 	}
+
+	inline void Reset(std::size_t page_count, std::size_t bits_per_page) {
+		m_page_count = page_count;
+		m_page_bits = bits_per_page;
+		m_page_size = std::size_t(1) << bits_per_page;
+		m_page_mask = (std::size_t(1) << bits_per_page) - 1;
+		m_pages = std::make_unique<std::unique_ptr<T[]>[]>(page_count);
+		static_cast<Derived *>(this)->reset();
+	}
 };
 
 template <typename T> class PagedVector : public PagedVectorBase<T, PagedVector<T>> {
@@ -101,6 +106,7 @@ template <typename T> class PagedVector : public PagedVectorBase<T, PagedVector<
 			this->m_pages[page_id] = std::make_unique_for_overwrite<T[]>(this->m_page_size);
 		return this->m_pages[page_id].get();
 	}
+	inline void reset() { m_count = 0; }
 	template <typename, typename> friend class PagedVectorBase;
 
 public:
@@ -124,6 +130,7 @@ template <typename T> class SafePagedVector : public PagedVectorBase<T, SafePage
 			this->m_pages[page_id] = std::make_unique_for_overwrite<T[]>(this->m_page_size);
 		return this->m_pages[page_id].get();
 	}
+	inline void reset() { m_atomic_count = 0; }
 	template <typename, typename> friend class PagedVectorBase;
 
 public:

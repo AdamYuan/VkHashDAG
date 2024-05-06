@@ -197,8 +197,8 @@ int main() {
 	                                                  DAGColorPool::Config{
 	                                                      .level_count = 17,
 	                                                      .leaf_level = 10,
-	                                                      .node_bits_per_svo_page = 18,
-	                                                      .word_bits_per_vbr_page = 24,
+	                                                      .node_bits_per_node_page = 18,
+	                                                      .word_bits_per_leaf_page = 24,
 	                                                  });
 
 	auto edit_ns = ns([&]() {

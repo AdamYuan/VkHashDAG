@@ -9,21 +9,16 @@
 #include <hashdag/VBRColor.hpp>
 #include <hashdag/VBROctree.hpp>
 
-#include "VkPagedBuffer.hpp"
 #include "PagedVector.hpp"
+#include "VkPagedBuffer.hpp"
 
 #include <array>
-#include <atomic>
-#include <mutex>
-#include <shared_mutex>
 #include <span>
 
 class DAGColorPool {
-private:
-	template <typename T> using ConstSpan = std::span<const T>;
-
 public:
-	using Writer = hashdag::VBRChunkWriter<uint32_t, ConstSpan>;
+	template <typename T> using SafeLeafSpan = PagedSpan<SafePagedVector<uint32_t>, T>;
+	using Writer = hashdag::VBRChunkWriter<uint32_t, SafeLeafSpan>;
 	struct Pointer {
 		static constexpr uint32_t kDataBits = 30u;
 		enum class Tag { kNull = 0, kNode, kLeaf, kColor };
@@ -39,7 +34,7 @@ public:
 
 	struct Config {
 		uint32_t level_count, leaf_level;
-		uint32_t node_bits_per_svo_page, word_bits_per_vbr_page;
+		uint32_t node_bits_per_node_page, word_bits_per_leaf_page;
 	};
 
 private:
@@ -47,34 +42,8 @@ private:
 	static_assert(sizeof(Node) == 8 * sizeof(uint32_t));
 	static constexpr uint32_t kWordBitsPerNode = 3;
 
-	struct Leaf {
-		hashdag::VBRChunk<uint32_t, std::vector> chunk;
-		uint32_t vbr_offset{}, vbr_size{};
-	};
-
-	template <typename T> struct SafeVector {
-		std::vector<T> vector;
-		mutable std::shared_mutex mutex;
-
-		inline auto Read(std::size_t idx, std::invocable<const T &> auto &&visitor) const {
-			std::shared_lock lock{mutex};
-			return visitor(vector[idx]);
-		}
-		inline auto Write(std::size_t idx, std::invocable<T &> auto &&visitor) {
-			std::shared_lock lock{mutex};
-			return visitor(vector[idx]);
-		}
-		inline std::size_t Append(T &&t, std::invocable<T &> auto &&appender) {
-			std::unique_lock lock{mutex};
-			std::size_t idx = vector.size();
-			vector.push_back(std::move(t));
-			appender(vector.back());
-			return idx;
-		}
-	};
-
-	SafeVector<Node> m_nodes;
-	SafeVector<Leaf> m_leaves;
+	SafePagedVector<Node> m_nodes;
+	SafePagedVector<uint32_t> m_leaves;
 
 	Config m_config;
 	Pointer m_root = {};
@@ -82,7 +51,7 @@ private:
 	// Vulkan Stuff
 	myvk::Ptr<myvk::Device> m_device_ptr;
 	myvk::Ptr<myvk::Queue> m_main_queue_ptr, m_sparse_queue_ptr;
-	myvk::Ptr<VkPagedBuffer> m_svo_buffer, m_vbr_buffer;
+	myvk::Ptr<VkPagedBuffer> m_node_buffer, m_leaf_buffer;
 	void create_vk_buffer();
 
 	// Flush related Stuff
@@ -94,6 +63,7 @@ public:
 	    : m_device_ptr{main_queue_ptr->GetDevicePtr()}, m_main_queue_ptr{main_queue_ptr},
 	      m_sparse_queue_ptr{sparse_queue_ptr}, m_config{config} {
 		create_vk_buffer();
+		m_nodes.Reset(m_node_buffer->GetPageCount(), m_config.node_bits_per_node_page);
 	}
 
 	inline Pointer GetNode(Pointer ptr, auto idx) const {
@@ -104,9 +74,8 @@ public:
 	inline Pointer SetNode(Pointer ptr, std::span<const Pointer, 8> child_ptrs) {
 		if (ptr.GetTag() != Pointer::Tag::kNode ||
 		    !std::ranges::equal(m_nodes.Read(ptr.GetData(), [](Node node) { return node; }), child_ptrs)) {
-			ptr =
-			    Pointer{Pointer::Tag::kNode,
-			            (uint32_t)m_nodes.Append({}, [&](Node &node) { std::ranges::copy(child_ptrs, node.begin()); })};
+			auto opt_idx = m_nodes.Append([&](Node &node) { std::ranges::copy(child_ptrs, node.begin()); });
+			ptr = opt_idx ? Pointer{Pointer::Tag::kNode, (uint32_t)*opt_idx} : ptr;
 		}
 		return ptr;
 	}

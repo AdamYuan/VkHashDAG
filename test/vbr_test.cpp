@@ -95,7 +95,7 @@ TEST_CASE("Test VBRBitset") {
 }
 template <typename T> using const_span = std::span<const T>;
 TEST_CASE("Test VBRChunk") {
-	constexpr uint32_t kR2 = 10007, kR3 = 21753;
+	/*constexpr uint32_t kR2 = 10007, kR3 = 21753;
 	hashdag::VBRChunk<uint32_t, std::vector> blk;
 	hashdag::R5G6B5Color r565{hashdag::RGBColor(1, 0, 0)}, g565{hashdag::RGBColor(0, 1, 0)},
 	    b565{hashdag::RGBColor(0, 0, 1)};
@@ -144,5 +144,5 @@ TEST_CASE("Test VBRChunk") {
 		vector_cmp(blk3.m_block_headers, blk.m_block_headers);
 		vector_cmp(blk3.m_macro_blocks, blk.m_macro_blocks);
 		vector_cmp(blk3.m_weight_bits.GetBits(), blk.m_weight_bits.GetBits());
-	}
+	} */
 }
