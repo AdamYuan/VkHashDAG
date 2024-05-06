@@ -52,6 +52,7 @@ template <typename T, typename Type>
 concept VBRContainer = requires(const T &t, std::size_t idx) {
 	{ t[idx] } -> std::convertible_to<Type>;
 	{ t.size() } -> std::convertible_to<std::size_t>;
+	{ t.empty() } -> std::convertible_to<bool>;
 };
 
 template <std::unsigned_integral Word, template <typename> typename Container> class VBRBitset {
@@ -72,7 +73,7 @@ public:
 	template <template <typename> typename SrcContainer>
 	inline explicit VBRBitset(VBRBitset<Word, SrcContainer> &&src) : m_bits{std::move(src.m_bits)} {}
 
-	inline const Container<Word> &GetBits() const { return m_bits; }
+	inline const Container<Word> &GetWords() const { return m_bits; }
 	inline Word Get(std::size_t index, Word bits) const {
 		Word offset = index & kWordMask;
 		Word w0 = m_bits[index >> kWordMaskBits] >> offset;
@@ -274,6 +275,9 @@ public:
 	      m_weight_bits{std::move(weight_bits)} {}
 
 	inline bool Empty() const { return m_macro_blocks.empty(); }
+	inline const auto &GetMacroBlocks() const { return m_macro_blocks; }
+	inline const auto &GetBlockHeaders() const { return m_block_headers; }
+	inline const auto &GetWeightBits() const { return m_weight_bits; }
 };
 
 template <std::unsigned_integral Word, template <typename> typename Container> class VBRChunkIterator {

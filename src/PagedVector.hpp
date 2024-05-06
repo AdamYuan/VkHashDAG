@@ -148,9 +148,10 @@ template <typename PagedVector_T, typename View_T = typename PagedVector_T::Type
 	static_assert((1u << kRatioBits) == kRatio);
 
 	std::size_t m_offset{}, m_count{}, m_view_offset{}, m_view_count{}, m_page_bits{}, m_page_mask{};
-	const std::unique_ptr<Store_T[]> *m_pages;
+	const std::unique_ptr<Store_T[]> *m_pages{nullptr};
 
 public:
+	inline PagedSpan() = default;
 	inline PagedSpan(const PagedVector_T &vector, std::size_t offset, std::size_t count)
 	    : m_pages{vector.m_pages.get()}, m_page_bits{vector.m_page_bits}, m_page_mask{vector.m_page_mask}, //
 	      m_offset{offset}, m_count{count},                                                                //
@@ -162,7 +163,9 @@ public:
 		std::size_t idx = (view_idx + m_view_offset) << kRatioBits;
 		return *((const View_T *)(m_pages[idx >> m_page_bits].get() + (idx & m_page_mask)));
 	}
+	// Lower-case for VBRContainer concept
 	inline std::size_t size() const { return m_view_count; }
+	inline bool empty() const { return m_count == 0; }
 };
 
 #endif // PAGEDVECTOR_HPP

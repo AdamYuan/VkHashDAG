@@ -195,10 +195,10 @@ int main() {
 	                                                }());
 	auto dag_color_pool = myvk::MakePtr<DAGColorPool>(generic_queue, sparse_queue,
 	                                                  DAGColorPool::Config{
-	                                                      .level_count = 17,
 	                                                      .leaf_level = 10,
 	                                                      .node_bits_per_node_page = 18,
 	                                                      .word_bits_per_leaf_page = 24,
+	                                                      .keep_history = true,
 	                                                  });
 
 	auto edit_ns = ns([&]() {
