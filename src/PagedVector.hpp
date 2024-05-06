@@ -165,7 +165,7 @@ public:
 	}
 	// Lower-case for VBRContainer concept
 	inline std::size_t size() const { return m_view_count; }
-	inline bool empty() const { return m_count == 0; }
+	inline bool empty() const { return size() == 0; }
 };
 
 #endif // PAGEDVECTOR_HPP
