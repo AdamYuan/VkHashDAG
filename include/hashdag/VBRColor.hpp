@@ -48,12 +48,18 @@ template <std::unsigned_integral Word> struct VBRWordInfo {
 	                             kMaskBits = std::bit_width(kMask);
 };
 
+template <typename T, typename Type>
+concept VBRContainer = requires(const T &t, std::size_t idx) {
+	{ t[idx] } -> std::convertible_to<Type>;
+	{ t.size() } -> std::convertible_to<std::size_t>;
+};
+
 template <std::unsigned_integral Word, template <typename> typename Container> class VBRBitset {
 private:
 	inline static constexpr Word kWordBits = VBRWordInfo<Word>::kBits, kWordMask = VBRWordInfo<Word>::kMask,
 	                             kWordMaskBits = VBRWordInfo<Word>::kMaskBits;
 	Container<Word> m_bits;
-	static_assert(std::ranges::random_access_range<Container<Word>>);
+	static_assert(VBRContainer<Container<Word>, Word>);
 
 	template <std::unsigned_integral, template <typename> typename> friend class VBRBitset;
 	template <std::unsigned_integral> friend class VBRBitsetWriter;
@@ -172,30 +178,33 @@ public:
 			// printf("SB = %zu, RB = %zu, WC = %zu\n", src_bits, remain_bits, word_count);
 		}
 
-		auto src_word_it = src.m_bits.begin() + (src_begin >> kWordMaskBits);
+		std::size_t word_idx = m_bits.size() - 1;
+		m_bits.resize(m_bits.size() + word_count);
+
+		std::size_t src_word_idx = src_begin >> kWordMaskBits;
 		if (bit_offset == src_bit_offset) {
-			m_bits.back() |= Word(*src_word_it >> bit_offset) << bit_offset;
-			m_bits.insert(m_bits.end(), src_word_it + 1, src_word_it + 1 + word_count);
+			m_bits[word_idx++] |= Word(src.m_bits[src_word_idx++] >> bit_offset) << bit_offset;
+			for (std::size_t i = 0; i < word_count; ++i)
+				m_bits[word_idx++] = src.m_bits[src_word_idx++];
 		} else if (src_bit_offset < bit_offset) {
-			Word prev_word = *(src_word_it++);
-			m_bits.back() |= (prev_word >> src_bit_offset) << bit_offset;
+			Word prev_word = src.m_bits[src_word_idx++];
+			m_bits[word_idx++] |= (prev_word >> src_bit_offset) << bit_offset;
 			Word shl = bit_offset - src_bit_offset, prev_shr = kWordBits - shl;
 			for (std::size_t i = 0; i < word_count; ++i) {
-				Word word = src_word_it == src.m_bits.end() ? Word(0) : *(src_word_it++);
-				m_bits.push_back((prev_word >> prev_shr) | (word << shl));
+				Word word = src_word_idx == src.m_bits.size() ? Word(0) : src.m_bits[src_word_idx++];
+				m_bits[word_idx++] = (prev_word >> prev_shr) | (word << shl);
 				prev_word = word;
 			}
 		} else {
 			// src_bit_offset > bit_offset
-			Word word = *(src_word_it++);
-			Word next_word = src_word_it == src.m_bits.end() ? Word(0) : *(src_word_it++);
+			Word word = src.m_bits[src_word_idx++];
+			Word next_word = src_word_idx == src.m_bits.size() ? Word(0) : src.m_bits[src_word_idx++];
 			Word shr = src_bit_offset - bit_offset, next_shl = kWordBits - shr;
-			m_bits.back() |= (word >> src_bit_offset) << bit_offset;
-			m_bits.back() |= next_word << next_shl;
+			m_bits[word_idx++] |= ((word >> src_bit_offset) << bit_offset) | (next_word << next_shl);
 			for (std::size_t i = 0; i < word_count; ++i) {
 				word = next_word;
-				next_word = src_word_it == src.m_bits.end() ? Word(0) : *(src_word_it++);
-				m_bits.push_back((word >> shr) | (next_word << next_shl));
+				next_word = src_word_idx == src.m_bits.size() ? Word(0) : src.m_bits[src_word_idx++];
+				m_bits[word_idx++] = (word >> shr) | (next_word << next_shl);
 			}
 		}
 
@@ -242,8 +251,8 @@ private:
 	Container<VBRBlockHeader> m_block_headers;
 	VBRBitset<Word, Container> m_weight_bits;
 
-	static_assert(std::ranges::random_access_range<Container<VBRMacroBlock>>);
-	static_assert(std::ranges::random_access_range<Container<VBRMacroBlock>>);
+	static_assert(VBRContainer<Container<VBRMacroBlock>, VBRMacroBlock>);
+	static_assert(VBRContainer<Container<VBRBlockHeader>, VBRBlockHeader>);
 
 	template <std::unsigned_integral, template <typename> typename> friend class VBRChunk;
 	template <std::unsigned_integral, template <typename> typename> friend class VBRChunkWriter;
