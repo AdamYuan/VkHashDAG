@@ -14,7 +14,7 @@
 #include "Sampler.hpp"
 
 namespace myvk {
-class ImGuiRenderer : public Base {
+class ImGuiRenderer final : public Base {
 private:
 	Ptr<DescriptorSetLayout> m_descriptor_set_layout;
 	Ptr<DescriptorPool> m_descriptor_pool;

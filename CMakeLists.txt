@@ -56,7 +56,7 @@ target_link_libraries(VkHashDAG PRIVATE
         phmap::phmap
         shader
 )
-# target_compile_options(VkHashDAG PRIVATE -fno-exceptions -fno-rtti)
+target_compile_options(VkHashDAG PRIVATE -fno-exceptions) # TODO: Make it portable
 
 install(TARGETS VkHashDAG RUNTIME DESTINATION)
 

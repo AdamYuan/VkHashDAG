@@ -129,7 +129,8 @@ auto ThreadPool::enqueue(F &&f, Args &&...args) -> std::future<
 
 	// don't allow enqueueing after stopping the pool
 	if (stop)
-		throw std::runtime_error("enqueue on stopped ThreadPool");
+		return {};
+	// throw std::runtime_error("enqueue on stopped ThreadPool");
 
 	tasks.emplace([task]() { (*task)(); });
 	std::atomic_fetch_add_explicit(&in_flight, std::size_t(1), std::memory_order_relaxed);
