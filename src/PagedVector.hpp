@@ -93,7 +93,7 @@ public:
 		m_page_size = std::size_t(1) << bits_per_page;
 		m_page_mask = (std::size_t(1) << bits_per_page) - 1;
 		m_pages = std::make_unique<std::unique_ptr<T[]>[]>(page_total);
-		static_cast<Derived *>(this)->reset();
+		static_cast<Derived *>(this)->reset(page_total, bits_per_page);
 	}
 };
 
@@ -113,7 +113,7 @@ template <typename T> class PagedVector : public PagedVectorBase<T, PagedVector<
 		}
 		return this->m_pages[page_id].get();
 	}
-	inline void reset() { m_count = m_page_count = 0; }
+	inline void reset(std::size_t page_total, std::size_t bits_per_page) { m_count = m_page_count = 0; }
 	inline std::size_t get_count() const { return m_count; }
 	inline std::size_t get_page_count() const { return m_page_count; }
 	template <typename, typename> friend class PagedVectorBase;
@@ -125,8 +125,9 @@ public:
 };
 
 template <typename T> class SafePagedVector : public PagedVectorBase<T, SafePagedVector<T>> {
-	inline static constexpr std::size_t kPageMutexCountBits = 6;
+	inline static constexpr std::size_t kPageMutexCountBits = 4;
 	std::atomic_size_t m_atomic_count{}, m_atomic_page_count{};
+	std::unique_ptr<std::atomic_bool[]> m_page_flags;
 	std::mutex m_page_mutices[1 << kPageMutexCountBits];
 
 	inline std::size_t append_one() { return m_atomic_count.fetch_add(1, std::memory_order_relaxed); }
@@ -134,23 +135,25 @@ template <typename T> class SafePagedVector : public PagedVectorBase<T, SafePage
 		return m_atomic_count.fetch_add(count, std::memory_order_relaxed);
 	}
 	inline T *upsert_page(std::size_t page_id) {
-		T *p_page = this->m_pages[page_id].get(); // First fetch
+		if (m_page_flags[page_id].load(std::memory_order_acquire))
+			return this->m_pages[page_id].get();
+
+		// If not allocated, lock and allocate
+		std::scoped_lock lock{m_page_mutices[page_id & ((1 << kPageMutexCountBits) - 1)]};
+		T *p_page = this->m_pages[page_id].get(); // Second fetch
 		if (p_page == nullptr) {
-			// If not allocated, lock and allocate
-			std::scoped_lock lock{m_page_mutices[page_id & ((1 << kPageMutexCountBits) - 1)]};
-			p_page = this->m_pages[page_id].get(); // Second fetch
-			if (p_page == nullptr) {
-				// Still need to be allocated
-				this->m_pages[page_id] = std::make_unique_for_overwrite<T[]>(this->m_page_size);
-				p_page = this->m_pages[page_id].get();
-				m_atomic_page_count.fetch_add(1, std::memory_order_relaxed);
-			}
+			this->m_pages[page_id] = std::make_unique_for_overwrite<T[]>(this->m_page_size);
+			m_page_flags[page_id].store(true, std::memory_order_release); // Set flag
+
+			m_atomic_page_count.fetch_add(1, std::memory_order_relaxed);
+			p_page = this->m_pages[page_id].get();
 		}
 		return p_page;
 	}
-	inline void reset() {
+	inline void reset(std::size_t page_total, std::size_t bits_per_page) {
 		m_atomic_count.store(0);
 		m_atomic_page_count.store(0);
+		m_page_flags = std::make_unique<std::atomic_bool[]>(page_total);
 	}
 	inline std::size_t get_count() const { return m_atomic_count.load(); }
 	inline std::size_t get_page_count() const { return m_atomic_page_count.load(); }
