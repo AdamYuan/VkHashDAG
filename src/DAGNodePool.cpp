@@ -69,7 +69,7 @@ bool DAGNodePool::Flush(const myvk::SemaphoreGroup &wait_semaphores, const myvk:
 	// auto scan1_ns = ns([&]() {
 	for (const auto &it : m_page_write_ranges) {
 		uint32_t page_id = it.first, gpu_page_id = page_id >> m_page_bits_per_gpu_page;
-		const Range &range = it.second;
+		const Range<uint32_t> &range = it.second;
 		uint32_t gpu_page_offset =
 		    ((page_id & ((1u << m_page_bits_per_gpu_page) - 1)) << GetConfig().word_bits_per_page) | range.begin;
 		std::copy(m_pages[page_id].get() + range.begin, m_pages[page_id].get() + range.end,

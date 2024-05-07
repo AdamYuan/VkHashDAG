@@ -20,6 +20,7 @@
 #include <myvk/Fence.hpp>
 #include <myvk/Semaphore.hpp>
 
+#include "Range.hpp"
 #include "VkPagedBuffer.hpp"
 
 class DAGNodePool final
@@ -31,19 +32,11 @@ public:
 	using WordSpanHasher = hashdag::MurmurHasher32;
 
 private:
-	struct Range {
-		uint32_t begin = -1, end = 0;
-		inline void Union(Range r) {
-			begin = std::min(begin, r.begin);
-			end = std::max(end, r.end);
-		}
-	};
-
 	std::unique_ptr<std::atomic_uint32_t[]> m_bucket_words;
 	std::unique_ptr<std::unique_ptr<uint32_t[]>[]> m_pages;
 	std::array<std::mutex, 1024> m_edit_mutexes{};
-	phmap::parallel_flat_hash_map<uint32_t, Range, std::hash<uint32_t>, std::equal_to<>,
-	                              std::allocator<std::pair<uint32_t, Range>>, 6, std::mutex>
+	phmap::parallel_flat_hash_map<uint32_t, Range<uint32_t>, std::hash<uint32_t>, std::equal_to<>,
+	                              std::allocator<std::pair<uint32_t, Range<uint32_t>>>, 6, std::mutex>
 	    m_page_write_ranges;
 	phmap::parallel_flat_hash_set<uint32_t, std::hash<uint32_t>, std::equal_to<>, std::allocator<uint32_t>, 6,
 	                              std::mutex>

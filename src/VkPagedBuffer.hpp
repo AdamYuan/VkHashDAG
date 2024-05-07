@@ -32,7 +32,7 @@ public:
 
 	~VkPagedBuffer() override;
 
-	inline uint32_t GetPageCount() const { return m_pages.size(); }
+	inline uint32_t GetPageTotal() const { return m_pages.size(); }
 	inline const VkMemoryRequirements &GetPageMemoryRequirements() const { return m_page_memory_requirements; }
 	inline VkDeviceSize GetPageSize() const { return m_page_memory_requirements.size; }
 
@@ -76,7 +76,7 @@ public:
 		vkGetBufferMemoryRequirements(device->GetHandle(), buffer, &page_memory_requirements);
 		page_memory_requirements.size = get_page_size(page_memory_requirements);
 
-		uint32_t page_count = (size + page_memory_requirements.size - 1) / page_memory_requirements.size;
+		uint32_t page_total = (size + page_memory_requirements.size - 1) / page_memory_requirements.size;
 
 		auto ret = myvk::MakePtr<VkPagedBuffer>();
 		ret->m_buffer = buffer;
@@ -85,7 +85,7 @@ public:
 
 		ret->m_device_ptr = device;
 		ret->m_page_memory_requirements = page_memory_requirements;
-		ret->m_pages.resize(page_count);
+		ret->m_pages.resize(page_total);
 		return ret;
 	}
 

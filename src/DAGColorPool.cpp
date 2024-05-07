@@ -33,3 +33,8 @@ void DAGColorPool::create_vk_buffer() {
 	    },
 	    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, {m_main_queue_ptr, m_sparse_queue_ptr});
 }
+
+bool DAGColorPool::Flush(const myvk::SemaphoreGroup &wait_semaphores, const myvk::SemaphoreGroup &signal_semaphores,
+                         const myvk::Ptr<myvk::Fence> &fence) {
+	return false;
+}

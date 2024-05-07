@@ -16,11 +16,21 @@
 template <typename T, typename Derived> class PagedVectorBase {
 protected:
 	std::unique_ptr<std::unique_ptr<T[]>[]> m_pages;
-	std::size_t m_page_count{}, m_page_size{}, m_page_bits{}, m_page_mask{};
+	std::size_t m_page_total{}, m_page_size{}, m_page_bits{}, m_page_mask{};
 
-private:
-	inline void foreach_page(std::size_t idx, std::size_t count,
-	                         std::invocable<std::size_t, std::size_t, std::size_t, std::size_t> auto &&func) const {
+	template <typename, typename> friend class PagedSpan;
+
+public:
+	using Type = T;
+
+	inline PagedVectorBase() = default;
+	inline PagedVectorBase(std::size_t page_total, std::size_t bits_per_page) { Reset(page_total, bits_per_page); }
+
+	inline std::size_t GetCount() const { return static_cast<const Derived *>(this)->get_count(); }
+	inline std::size_t GetPageCount() const { return static_cast<const Derived *>(this)->get_page_count(); }
+
+	inline void ForeachPage(std::size_t idx, std::size_t count,
+	                        std::invocable<std::size_t, std::size_t, std::size_t, std::size_t> auto &&func) const {
 		std::size_t offset = 0, page_id = idx >> m_page_bits, page_offset = idx & m_page_mask;
 		for (; count >= m_page_size - page_offset;
 		     offset += m_page_size - page_offset, count -= m_page_size - page_offset, ++page_id, page_offset = 0)
@@ -30,31 +40,24 @@ private:
 			func(offset, page_id, page_offset, count);
 	}
 
-	template <typename, typename> friend class PagedSpan;
-
-public:
-	using Type = T;
-
-	inline PagedVectorBase() = default;
-	inline PagedVectorBase(std::size_t page_count, std::size_t bits_per_page) { Reset(page_count, bits_per_page); }
 	inline std::optional<std::size_t> Append(std::invocable<T &> auto &&appender) {
 		std::size_t idx = static_cast<Derived *>(this)->append_one();
-		if (idx >= (m_page_count << m_page_bits))
+		if (idx >= (m_page_total << m_page_bits))
 			return std::nullopt;
 		T *p_page = static_cast<Derived *>(this)->upsert_page(idx >> m_page_bits);
 		appender(p_page[idx & m_page_mask]);
 		return idx;
 	}
-	inline std::optional<std::size_t> Append(std::size_t count,
-	                                         std::invocable<std::size_t, std::span<T>> auto &&appender) {
+	inline std::optional<std::size_t>
+	Append(std::size_t count, std::invocable<std::size_t, std::size_t, std::size_t, std::span<T>> auto &&appender) {
 		std::size_t idx = static_cast<Derived *>(this)->append_count(count);
-		if (idx + count > (m_page_count << m_page_bits))
+		if (idx + count > (m_page_total << m_page_bits))
 			return std::nullopt;
-		foreach_page(
+		ForeachPage(
 		    idx, count,
 		    [this, &appender](std::size_t offset, std::size_t page_id, std::size_t page_offset, std::size_t page_size) {
 			    T *p_page = static_cast<Derived *>(this)->upsert_page(page_id);
-			    appender(offset, std::span<T>(p_page + page_offset, page_size));
+			    appender(offset, page_id, page_offset, std::span<T>(p_page + page_offset, page_size));
 		    });
 		return idx;
 	}
@@ -64,36 +67,38 @@ public:
 		return reader(m_pages[idx >> m_page_bits][idx & m_page_mask]);
 	}
 	inline void Read(std::size_t idx, std::size_t count,
-	                 std::invocable<std::size_t, std::span<const T>> auto &&reader) const {
-		foreach_page(
+	                 std::invocable<std::size_t, std::size_t, std::size_t, std::span<const T>> auto &&reader) const {
+		ForeachPage(
 		    idx, count,
 		    [this, &reader](std::size_t offset, std::size_t page_id, std::size_t page_offset, std::size_t page_size) {
-			    reader(offset, std::span<const T>(m_pages[page_id].get() + page_offset, page_size));
+			    reader(offset, page_id, page_offset,
+			           std::span<const T>(m_pages[page_id].get() + page_offset, page_size));
 		    });
 	}
 	inline auto Write(std::size_t idx, std::invocable<T &> auto &&writer) {
 		return writer(m_pages[idx >> m_page_bits][idx & m_page_mask]);
 	}
-	inline void Write(std::size_t idx, std::size_t count, std::invocable<std::size_t, std::span<T>> auto &&writer) {
-		foreach_page(
+	inline void Write(std::size_t idx, std::size_t count,
+	                  std::invocable<std::size_t, std::size_t, std::size_t, std::span<T>> auto &&writer) {
+		ForeachPage(
 		    idx, count,
 		    [this, &writer](std::size_t offset, std::size_t page_id, std::size_t page_offset, std::size_t page_size) {
-			    writer(offset, std::span<T>(m_pages[page_id].get() + page_offset, page_size));
+			    writer(offset, page_id, page_offset, std::span<T>(m_pages[page_id].get() + page_offset, page_size));
 		    });
 	}
 
-	inline void Reset(std::size_t page_count, std::size_t bits_per_page) {
-		m_page_count = page_count;
+	inline void Reset(std::size_t page_total, std::size_t bits_per_page) {
+		m_page_total = page_total;
 		m_page_bits = bits_per_page;
 		m_page_size = std::size_t(1) << bits_per_page;
 		m_page_mask = (std::size_t(1) << bits_per_page) - 1;
-		m_pages = std::make_unique<std::unique_ptr<T[]>[]>(page_count);
+		m_pages = std::make_unique<std::unique_ptr<T[]>[]>(page_total);
 		static_cast<Derived *>(this)->reset();
 	}
 };
 
 template <typename T> class PagedVector : public PagedVectorBase<T, PagedVector<T>> {
-	std::size_t m_count{};
+	std::size_t m_count{}, m_page_count{};
 
 	inline std::size_t append_one() { return m_count++; }
 	inline std::size_t append_count(std::size_t count) {
@@ -102,22 +107,26 @@ template <typename T> class PagedVector : public PagedVectorBase<T, PagedVector<
 		return ret;
 	}
 	inline T *upsert_page(std::size_t page_id) {
-		if (this->m_pages[page_id] == nullptr)
+		if (this->m_pages[page_id] == nullptr) {
 			this->m_pages[page_id] = std::make_unique_for_overwrite<T[]>(this->m_page_size);
+			++m_page_count;
+		}
 		return this->m_pages[page_id].get();
 	}
-	inline void reset() { m_count = 0; }
+	inline void reset() { m_count = m_page_count = 0; }
+	inline std::size_t get_count() const { return m_count; }
+	inline std::size_t get_page_count() const { return m_page_count; }
 	template <typename, typename> friend class PagedVectorBase;
 
 public:
 	inline PagedVector() = default;
-	inline PagedVector(std::size_t page_count, std::size_t bits_per_page)
-	    : PagedVectorBase<T, PagedVector>(page_count, bits_per_page) {}
+	inline PagedVector(std::size_t page_total, std::size_t bits_per_page)
+	    : PagedVectorBase<T, PagedVector>(page_total, bits_per_page) {}
 };
 
 template <typename T> class SafePagedVector : public PagedVectorBase<T, SafePagedVector<T>> {
-	inline static constexpr std::size_t kPageMutexCountBits = 4;
-	std::atomic_size_t m_atomic_count{};
+	inline static constexpr std::size_t kPageMutexCountBits = 6;
+	std::atomic_size_t m_atomic_count{}, m_atomic_page_count{};
 	std::mutex m_page_mutices[1 << kPageMutexCountBits];
 
 	inline std::size_t append_one() { return m_atomic_count.fetch_add(1, std::memory_order_relaxed); }
@@ -125,18 +134,32 @@ template <typename T> class SafePagedVector : public PagedVectorBase<T, SafePage
 		return m_atomic_count.fetch_add(count, std::memory_order_relaxed);
 	}
 	inline T *upsert_page(std::size_t page_id) {
-		std::scoped_lock lock{m_page_mutices[page_id & ((1 << kPageMutexCountBits) - 1)]};
-		if (this->m_pages[page_id] == nullptr)
-			this->m_pages[page_id] = std::make_unique_for_overwrite<T[]>(this->m_page_size);
-		return this->m_pages[page_id].get();
+		T *p_page = this->m_pages[page_id].get(); // First fetch
+		if (p_page == nullptr) {
+			// If not allocated, lock and allocate
+			std::scoped_lock lock{m_page_mutices[page_id & ((1 << kPageMutexCountBits) - 1)]};
+			p_page = this->m_pages[page_id].get(); // Second fetch
+			if (p_page == nullptr) {
+				// Still need to be allocated
+				this->m_pages[page_id] = std::make_unique_for_overwrite<T[]>(this->m_page_size);
+				p_page = this->m_pages[page_id].get();
+				m_atomic_page_count.fetch_add(1, std::memory_order_relaxed);
+			}
+		}
+		return p_page;
 	}
-	inline void reset() { m_atomic_count = 0; }
+	inline void reset() {
+		m_atomic_count.store(0);
+		m_atomic_page_count.store(0);
+	}
+	inline std::size_t get_count() const { return m_atomic_count.load(); }
+	inline std::size_t get_page_count() const { return m_atomic_page_count.load(); }
 	template <typename, typename> friend class PagedVectorBase;
 
 public:
 	inline SafePagedVector() = default;
-	inline SafePagedVector(std::size_t page_count, std::size_t bits_per_page)
-	    : PagedVectorBase<T, SafePagedVector>(page_count, bits_per_page) {}
+	inline SafePagedVector(std::size_t page_total, std::size_t bits_per_page)
+	    : PagedVectorBase<T, SafePagedVector>(page_total, bits_per_page) {}
 };
 
 template <typename PagedVector_T, typename View_T = typename PagedVector_T::Type> class PagedSpan {
