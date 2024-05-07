@@ -200,6 +200,7 @@ int main() {
 	                                                      .word_bits_per_leaf_page = 24,
 	                                                      .keep_history = true,
 	                                                  });
+	auto sparse_binder = myvk::MakePtr<VkSparseBinder>(sparse_queue);
 
 	auto edit_ns = ns([&]() {
 		const auto edit = [&](hashdag::VBREditor<uint32_t> auto &&vbr_editor) {
@@ -240,8 +241,10 @@ int main() {
 	printf("edit cost %lf ms\n", (double)edit_ns / 1000000.0);
 	printf("root = %d\n", dag_color_pool->GetRoot().GetData());
 	auto flush_ns = ns([&]() {
+		dag_node_pool->Flush(sparse_binder);
+		dag_color_pool->Flush(sparse_binder);
 		auto fence = myvk::Fence::Create(device);
-		if (dag_node_pool->Flush({}, {}, fence))
+		if (sparse_binder->QueueBind({}, {}, fence) == VK_SUCCESS)
 			fence->Wait();
 	});
 	printf("flush cost %lf ms\n", (double)flush_ns / 1000000.0);
@@ -250,10 +253,10 @@ int main() {
 		if (edit_future.valid() && edit_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
 			dag_node_pool->SetRoot(edit_future.get());
 	};
-	const auto push_edit = [dag_node_pool, device](const hashdag::Editor<uint32_t> auto &editor) {
+	const auto push_edit = [dag_node_pool, device, &sparse_binder](const hashdag::Editor<uint32_t> auto &editor) {
 		if (edit_future.valid())
 			return;
-		edit_future = edit_pool.submit_task([dag_node_pool, device, editor]() {
+		edit_future = edit_pool.submit_task([dag_node_pool, device, editor, &sparse_binder]() {
 			hashdag::NodePointer<uint32_t> new_root_ptr;
 
 			auto edit_ns = ns([&]() {
@@ -261,8 +264,9 @@ int main() {
 			});
 			printf("edit cost %lf ms\n", (double)edit_ns / 1000000.0);
 			auto flush_ns = ns([&]() {
+				dag_node_pool->Flush(sparse_binder);
 				auto fence = myvk::Fence::Create(device);
-				if (dag_node_pool->Flush({}, {}, fence))
+				if (sparse_binder->QueueBind({}, {}, fence) == VK_SUCCESS)
 					fence->Wait();
 			});
 			printf("flush cost %lf ms\n", (double)flush_ns / 1000000.0);
@@ -328,8 +332,9 @@ int main() {
 			    ns([&]() { dag_node_pool->SetRoot(dag_node_pool->ThreadedGC(&busy_pool, dag_node_pool->GetRoot())); });
 			printf("GC cost %lf ms\n", (double)gc_ns / 1000000.0);
 			auto flush_ns = ns([&]() {
+				dag_node_pool->Flush(sparse_binder);
 				auto fence = myvk::Fence::Create(device);
-				if (dag_node_pool->Flush({}, {}, fence))
+				if (sparse_binder->QueueBind({}, {}, fence) == VK_SUCCESS)
 					fence->Wait();
 			});
 			printf("flush cost %lf ms\n", (double)flush_ns / 1000000.0);

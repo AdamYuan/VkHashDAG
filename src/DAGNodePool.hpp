@@ -74,33 +74,29 @@ private:
 
 	// GPU stuff
 	myvk::Ptr<myvk::Device> m_device_ptr;
-	myvk::Ptr<myvk::Queue> m_main_queue_ptr, m_sparse_queue_ptr;
 
 	myvk::Ptr<VkPagedBuffer> m_paged_buffer;
 	uint32_t m_page_bits_per_gpu_page;
 
 	myvk::Ptr<myvk::DescriptorSet> m_descriptor_set;
 
-	void create_vk_buffer();
+	void create_vk_buffer(std::vector<myvk::Ptr<myvk::Queue>> &&queues);
 	void create_vk_descriptor();
 
 public:
 	DAGNodePool(const myvk::Ptr<myvk::Queue> &main_queue_ptr, const myvk::Ptr<myvk::Queue> &sparse_queue_ptr,
 	            const hashdag::Config<uint32_t> &config)
-	    : hashdag::NodePoolBase<DAGNodePool, uint32_t>(config), m_device_ptr{main_queue_ptr->GetDevicePtr()},
-	      m_main_queue_ptr{main_queue_ptr}, m_sparse_queue_ptr{sparse_queue_ptr} {
+	    : hashdag::NodePoolBase<DAGNodePool, uint32_t>(config), m_device_ptr{main_queue_ptr->GetDevicePtr()} {
 
 		m_bucket_words = std::make_unique<std::atomic_uint32_t[]>(GetConfig().GetTotalBuckets());
 		m_pages = std::make_unique<std::unique_ptr<uint32_t[]>[]>(GetConfig().GetTotalPages());
 
-		create_vk_buffer();
+		create_vk_buffer({main_queue_ptr, sparse_queue_ptr});
 		create_vk_descriptor();
 	}
 	inline ~DAGNodePool() final = default;
 
-	// return true if need to insert missing pages
-	bool Flush(const myvk::SemaphoreGroup &wait_semaphores, const myvk::SemaphoreGroup &signal_semaphores,
-	           const myvk::Ptr<myvk::Fence> &fence);
+	void Flush(const myvk::Ptr<VkSparseBinder> &binder);
 
 	inline void SetRoot(hashdag::NodePointer<uint32_t> root) { m_root = root; }
 	inline auto GetRoot() const { return m_root; }

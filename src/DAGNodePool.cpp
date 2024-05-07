@@ -4,7 +4,7 @@
 
 #include "DAGNodePool.hpp"
 
-void DAGNodePool::create_vk_buffer() {
+void DAGNodePool::create_vk_buffer(std::vector<myvk::Ptr<myvk::Queue>> &&queues) {
 	m_paged_buffer = VkPagedBuffer::Create(
 	    m_device_ptr, (VkDeviceSize)GetConfig().GetTotalWords() * sizeof(uint32_t),
 	    [this](const VkMemoryRequirements &mem_req) {
@@ -14,7 +14,7 @@ void DAGNodePool::create_vk_buffer() {
 		            : std::countr_zero(mem_req.alignment / sizeof(uint32_t)) - GetConfig().word_bits_per_page;
 		    return (1u << (GetConfig().word_bits_per_page + m_page_bits_per_gpu_page)) * sizeof(uint32_t);
 	    },
-	    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, {m_main_queue_ptr, m_sparse_queue_ptr});
+	    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, queues);
 }
 
 void DAGNodePool::create_vk_descriptor() {
@@ -38,8 +38,7 @@ void DAGNodePool::create_vk_descriptor() {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count();
 } */
 
-bool DAGNodePool::Flush(const myvk::SemaphoreGroup &wait_semaphores, const myvk::SemaphoreGroup &signal_semaphores,
-                        const myvk::Ptr<myvk::Fence> &fence) {
+void DAGNodePool::Flush(const myvk::Ptr<VkSparseBinder> &binder) {
 	phmap::flat_hash_set<uint32_t> alloc_gpu_pages, free_gpu_pages;
 
 	// auto scan0_ns = ns([&]() {
@@ -63,13 +62,12 @@ bool DAGNodePool::Flush(const myvk::SemaphoreGroup &wait_semaphores, const myvk:
 	/* });
 	printf("scan0 %lf ms\n", (double)scan0_ns / 1000000.0); */
 
-	bool binded = m_paged_buffer->QueueBindSparse(m_sparse_queue_ptr, alloc_gpu_pages, free_gpu_pages, wait_semaphores,
-	                                              signal_semaphores, fence) == VK_SUCCESS;
+	m_paged_buffer->Alloc(binder, alloc_gpu_pages);
+	m_paged_buffer->Free(binder, free_gpu_pages);
 
 	// auto scan1_ns = ns([&]() {
-	for (const auto &it : m_page_write_ranges) {
-		uint32_t page_id = it.first, gpu_page_id = page_id >> m_page_bits_per_gpu_page;
-		const Range<uint32_t> &range = it.second;
+	for (const auto &[page_id, range] : m_page_write_ranges) {
+		uint32_t gpu_page_id = page_id >> m_page_bits_per_gpu_page;
 		uint32_t gpu_page_offset =
 		    ((page_id & ((1u << m_page_bits_per_gpu_page) - 1)) << GetConfig().word_bits_per_page) | range.begin;
 		std::copy(m_pages[page_id].get() + range.begin, m_pages[page_id].get() + range.end,
@@ -80,6 +78,4 @@ bool DAGNodePool::Flush(const myvk::SemaphoreGroup &wait_semaphores, const myvk:
 
 	m_page_write_ranges.clear();
 	m_page_frees.clear();
-
-	return binded;
 }

@@ -17,6 +17,8 @@
 #include <myvk/Queue.hpp>
 #include <myvk/Semaphore.hpp>
 
+#include "VkSparseBinder.hpp"
+
 class VkPagedBuffer final : public myvk::BufferBase {
 private:
 	struct Page {
@@ -89,89 +91,75 @@ public:
 		return ret;
 	}
 
-	inline VkResult
-	QueueBindSparse(const myvk::Ptr<myvk::Queue> &sparse_queue, std::ranges::input_range auto &&alloc_page_ids,
-	                std::ranges::input_range auto &&free_page_ids, const myvk::SemaphoreGroup &wait_semaphores,
-	                const myvk::SemaphoreGroup &signal_semaphores, const myvk::Ptr<myvk::Fence> &fence) {
-		if (alloc_page_ids.empty() && free_page_ids.empty())
-			return VK_ERROR_UNKNOWN;
+	inline void Alloc(const myvk::Ptr<VkSparseBinder> &binder, std::ranges::input_range auto &&page_ids) {
+		if (page_ids.empty())
+			return;
 
-		VkBindSparseInfo bind_sparse_info = {VK_STRUCTURE_TYPE_BIND_SPARSE_INFO};
-		bind_sparse_info.waitSemaphoreCount = wait_semaphores.GetCount();
-		bind_sparse_info.pWaitSemaphores = wait_semaphores.GetSemaphoresPtr();
-		bind_sparse_info.signalSemaphoreCount = signal_semaphores.GetCount();
-		bind_sparse_info.pSignalSemaphores = signal_semaphores.GetSemaphoresPtr();
+		std::vector<VmaAllocation> allocations(page_ids.size());
+		std::vector<VmaAllocationInfo> allocation_infos(page_ids.size());
+
+		VmaAllocationCreateInfo create_info = {};
+		create_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+		create_info.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+		vmaAllocateMemoryPages(m_device_ptr->GetAllocatorHandle(), &m_page_memory_requirements, &create_info,
+		                       page_ids.size(), allocations.data(), allocation_infos.data());
 
 		std::vector<VkSparseMemoryBind> sparse_memory_binds;
-		sparse_memory_binds.reserve(alloc_page_ids.size() + free_page_ids.size());
+		sparse_memory_binds.reserve(page_ids.size());
 
-		if (!alloc_page_ids.empty()) {
-			std::vector<VmaAllocation> allocations(alloc_page_ids.size());
-			std::vector<VmaAllocationInfo> allocation_infos(alloc_page_ids.size());
+		for (uint32_t counter = 0; uint32_t page_id : page_ids) {
+			assert(!IsPageExist(page_id));
 
-			VmaAllocationCreateInfo create_info = {};
-			create_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-			create_info.flags =
-			    VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+			const auto &allocation_info = allocation_infos[counter];
 
-			vmaAllocateMemoryPages(m_device_ptr->GetAllocatorHandle(), &m_page_memory_requirements, &create_info,
-			                       alloc_page_ids.size(), allocations.data(), allocation_infos.data());
+			m_pages[page_id] = {
+			    .allocation = allocations[counter],
+			    .p_mapped_data = (uint32_t *)allocation_info.pMappedData,
+			};
 
-			uint32_t counter = 0;
-			for (uint32_t page_id : alloc_page_ids) {
-				assert(!IsPageExist(page_id));
+			VkDeviceSize resource_offset = page_id * m_page_memory_requirements.size;
+			sparse_memory_binds.push_back({
+			    .resourceOffset = resource_offset,
+			    .size = std::min(m_page_memory_requirements.size, m_size - resource_offset),
+			    .memory = allocation_info.deviceMemory,
+			    .memoryOffset = allocation_info.offset,
+			    .flags = 0,
+			});
 
-				const auto &allocation_info = allocation_infos[counter];
-
-				m_pages[page_id] = {
-				    .allocation = allocations[counter],
-				    .p_mapped_data = (uint32_t *)allocation_info.pMappedData,
-				};
-
-				VkDeviceSize resource_offset = page_id * m_page_memory_requirements.size;
-				sparse_memory_binds.push_back({
-				    .resourceOffset = resource_offset,
-				    .size = std::min(m_page_memory_requirements.size, m_size - resource_offset),
-				    .memory = allocation_info.deviceMemory,
-				    .memoryOffset = allocation_info.offset,
-				    .flags = 0,
-				});
-
-				++counter;
-			}
-		}
-		if (!free_page_ids.empty()) {
-			std::vector<VmaAllocation> allocations;
-			for (uint32_t page_id : free_page_ids) {
-				assert(IsPageExist(page_id));
-
-				allocations.push_back(m_pages[page_id].allocation);
-				m_pages[page_id] = {
-				    .allocation = VK_NULL_HANDLE,
-				    .p_mapped_data = nullptr,
-				};
-
-				VkDeviceSize resource_offset = page_id * m_page_memory_requirements.size;
-				sparse_memory_binds.push_back({
-				    .resourceOffset = resource_offset,
-				    .size = std::min(m_page_memory_requirements.size, m_size - resource_offset),
-				    .memory = VK_NULL_HANDLE,
-				});
-			}
-			vmaFreeMemoryPages(m_device_ptr->GetAllocatorHandle(), allocations.size(), allocations.data());
+			++counter;
 		}
 
-		VkSparseBufferMemoryBindInfo sparse_buffer_memory_bind_info = {
-		    .buffer = m_buffer,
-		    .bindCount = (uint32_t)sparse_memory_binds.size(),
-		    .pBinds = sparse_memory_binds.data(),
-		};
+		binder->Push(std::static_pointer_cast<BufferBase>(shared_from_this()), sparse_memory_binds);
+	}
 
-		bind_sparse_info.bufferBindCount = 1;
-		bind_sparse_info.pBufferBinds = &sparse_buffer_memory_bind_info;
+	inline void Free(const myvk::Ptr<VkSparseBinder> &binder, std::ranges::input_range auto &&page_ids) {
+		if (page_ids.empty())
+			return;
 
-		return vkQueueBindSparse(sparse_queue->GetHandle(), 1, &bind_sparse_info,
-		                         fence ? fence->GetHandle() : VK_NULL_HANDLE);
+		std::vector<VkSparseMemoryBind> sparse_memory_binds;
+		sparse_memory_binds.reserve(page_ids.size());
+
+		std::vector<VmaAllocation> allocations;
+		for (uint32_t page_id : page_ids) {
+			assert(IsPageExist(page_id));
+
+			allocations.push_back(m_pages[page_id].allocation);
+			m_pages[page_id] = {
+			    .allocation = VK_NULL_HANDLE,
+			    .p_mapped_data = nullptr,
+			};
+
+			VkDeviceSize resource_offset = page_id * m_page_memory_requirements.size;
+			sparse_memory_binds.push_back({
+			    .resourceOffset = resource_offset,
+			    .size = std::min(m_page_memory_requirements.size, m_size - resource_offset),
+			    .memory = VK_NULL_HANDLE,
+			});
+		}
+		vmaFreeMemoryPages(m_device_ptr->GetAllocatorHandle(), allocations.size(), allocations.data());
+
+		binder->Push(std::static_pointer_cast<BufferBase>(shared_from_this()), sparse_memory_binds);
 	}
 };
 

@@ -29,6 +29,9 @@ public:
 	inline std::size_t GetCount() const { return static_cast<const Derived *>(this)->get_count(); }
 	inline std::size_t GetPageCount() const { return static_cast<const Derived *>(this)->get_page_count(); }
 
+	inline std::size_t GetPageTotal() const { return m_page_total; }
+	inline std::size_t GetPageSize() const { return m_page_size; }
+
 	inline void ForeachPage(std::size_t idx, std::size_t count,
 	                        std::invocable<std::size_t, std::size_t, std::size_t, std::size_t> auto &&func) const {
 		std::size_t offset = 0, page_id = idx >> m_page_bits, page_offset = idx & m_page_mask;
@@ -53,12 +56,12 @@ public:
 		std::size_t idx = static_cast<Derived *>(this)->append_count(count);
 		if (idx + count > (m_page_total << m_page_bits))
 			return std::nullopt;
-		ForeachPage(
-		    idx, count,
-		    [this, &appender](std::size_t offset, std::size_t page_id, std::size_t page_offset, std::size_t page_size) {
-			    T *p_page = static_cast<Derived *>(this)->upsert_page(page_id);
-			    appender(offset, page_id, page_offset, std::span<T>(p_page + page_offset, page_size));
-		    });
+		ForeachPage(idx, count,
+		            [this, &appender](std::size_t offset, std::size_t page_id, std::size_t page_offset,
+		                              std::size_t inpage_size) {
+			            T *p_page = static_cast<Derived *>(this)->upsert_page(page_id);
+			            appender(offset, page_id, page_offset, std::span<T>(p_page + page_offset, inpage_size));
+		            });
 		return idx;
 	}
 
@@ -70,9 +73,9 @@ public:
 	                 std::invocable<std::size_t, std::size_t, std::size_t, std::span<const T>> auto &&reader) const {
 		ForeachPage(
 		    idx, count,
-		    [this, &reader](std::size_t offset, std::size_t page_id, std::size_t page_offset, std::size_t page_size) {
+		    [this, &reader](std::size_t offset, std::size_t page_id, std::size_t page_offset, std::size_t inpage_size) {
 			    reader(offset, page_id, page_offset,
-			           std::span<const T>(m_pages[page_id].get() + page_offset, page_size));
+			           std::span<const T>(m_pages[page_id].get() + page_offset, inpage_size));
 		    });
 	}
 	inline auto Write(std::size_t idx, std::invocable<T &> auto &&writer) {
@@ -82,10 +85,12 @@ public:
 	                  std::invocable<std::size_t, std::size_t, std::size_t, std::span<T>> auto &&writer) {
 		ForeachPage(
 		    idx, count,
-		    [this, &writer](std::size_t offset, std::size_t page_id, std::size_t page_offset, std::size_t page_size) {
-			    writer(offset, page_id, page_offset, std::span<T>(m_pages[page_id].get() + page_offset, page_size));
+		    [this, &writer](std::size_t offset, std::size_t page_id, std::size_t page_offset, std::size_t inpage_size) {
+			    writer(offset, page_id, page_offset, std::span<T>(m_pages[page_id].get() + page_offset, inpage_size));
 		    });
 	}
+	inline const T *GetPage(std::size_t page_id) const { return m_pages[page_id].get(); }
+	inline T *GetPage(std::size_t page_id) { return m_pages[page_id].get(); }
 
 	inline void Reset(std::size_t page_total, std::size_t bits_per_page) {
 		m_page_total = page_total;

@@ -51,17 +51,16 @@ private:
 	SafePagedVector<Node> m_nodes;
 	SafePagedVector<uint32_t> m_leaves;
 
-	Config m_config;
+	Config m_config{};
 	Pointer m_root = {};
 
 	// Vulkan Stuff
 	myvk::Ptr<myvk::Device> m_device_ptr;
-	myvk::Ptr<myvk::Queue> m_main_queue_ptr, m_sparse_queue_ptr;
 	myvk::Ptr<VkPagedBuffer> m_node_buffer, m_leaf_buffer;
-	void create_vk_buffer();
+	void create_vk_buffer(std::vector<myvk::Ptr<myvk::Queue>> &&queues);
 
 	// Flush related Stuff
-	uint32_t m_flushed_node_count, m_flushed_node_page_count, m_flushed_leaf_page_count;
+	uint32_t m_flushed_node_count{0}, m_flushed_node_page_count{0}, m_flushed_leaf_page_count{0};
 	phmap::parallel_flat_hash_map<uint32_t, Range<uint32_t>, std::hash<uint32_t>, std::equal_to<>,
 	                              std::allocator<std::pair<uint32_t, Range<uint32_t>>>, 6, std::mutex>
 	    m_leaf_page_write_ranges;
@@ -127,9 +126,8 @@ private:
 public:
 	inline explicit DAGColorPool(const myvk::Ptr<myvk::Queue> &main_queue_ptr,
 	                             const myvk::Ptr<myvk::Queue> &sparse_queue_ptr, const Config &config)
-	    : m_device_ptr{main_queue_ptr->GetDevicePtr()}, m_main_queue_ptr{main_queue_ptr},
-	      m_sparse_queue_ptr{sparse_queue_ptr}, m_config{config} {
-		create_vk_buffer();
+	    : m_device_ptr{main_queue_ptr->GetDevicePtr()}, m_config{config} {
+		create_vk_buffer({main_queue_ptr, sparse_queue_ptr});
 		m_nodes.Reset(m_node_buffer->GetPageTotal(), m_config.node_bits_per_node_page);
 		m_leaves.Reset(m_leaf_buffer->GetPageTotal(), m_config.word_bits_per_leaf_page);
 	}
@@ -197,9 +195,7 @@ public:
 	inline Pointer GetRoot() const { return m_root; }
 	inline void SetRoot(Pointer root) { m_root = root; }
 
-	// return true if need to insert missing pages
-	bool Flush(const myvk::SemaphoreGroup &wait_semaphores, const myvk::SemaphoreGroup &signal_semaphores,
-	           const myvk::Ptr<myvk::Fence> &fence);
+	void Flush(const myvk::Ptr<VkSparseBinder> &binder);
 };
 
 static_assert(hashdag::VBROctree<DAGColorPool, uint32_t>);

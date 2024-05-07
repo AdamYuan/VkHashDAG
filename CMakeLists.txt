@@ -43,7 +43,9 @@ add_executable(VkHashDAG
         src/DAGNodePool.cpp
         src/DAGColorPool.cpp
         src/DAGRenderer.cpp
+
         src/VkPagedBuffer.cpp
+        src/VkSparseBinder.cpp
 )
 target_include_directories(VkHashDAG PRIVATE include)
 target_link_libraries(VkHashDAG PRIVATE
