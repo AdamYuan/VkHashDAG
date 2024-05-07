@@ -75,17 +75,12 @@ private:
 
 	// GPU stuff
 	myvk::Ptr<VkPagedBuffer> m_buffer;
-	myvk::Ptr<myvk::DescriptorSet> m_descriptor_set;
-
-	void create_vk_buffer(hashdag::Config<uint32_t> *p_config, std::vector<myvk::Ptr<myvk::Queue>> &&queues);
-	void create_vk_descriptor();
 
 public:
 	inline DAGNodePool(const hashdag::Config<uint32_t> &config, myvk::Ptr<VkPagedBuffer> buffer)
 	    : hashdag::NodePoolBase<DAGNodePool, uint32_t>(config), m_buffer{std::move(buffer)} {
 		m_bucket_words = std::make_unique<std::atomic_uint32_t[]>(GetConfig().GetTotalBuckets());
 		m_pages = std::make_unique<std::unique_ptr<uint32_t[]>[]>(GetConfig().GetTotalPages());
-		create_vk_descriptor();
 	}
 	static myvk::Ptr<DAGNodePool> Create(hashdag::Config<uint32_t> config,
 	                                     const std::vector<myvk::Ptr<myvk::Queue>> &queues);
@@ -96,9 +91,6 @@ public:
 
 	inline void SetRoot(hashdag::NodePointer<uint32_t> root) { m_root = root; }
 	inline auto GetRoot() const { return m_root; }
-
-	inline const auto &GetDescriptorSet() const { return m_descriptor_set; }
-	inline const auto &GetDescriptorSetLayout() const { return m_descriptor_set->GetDescriptorSetLayoutPtr(); }
 
 	inline const auto &GetBuffer() const { return m_buffer; }
 };

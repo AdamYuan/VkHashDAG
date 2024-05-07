@@ -37,21 +37,6 @@ myvk::Ptr<DAGNodePool> DAGNodePool::Create(hashdag::Config<uint32_t> config,
 	return myvk::MakePtr<DAGNodePool>(std::move(config), std::move(buffer));
 }
 
-void DAGNodePool::create_vk_descriptor() {
-	VkDescriptorSetLayoutBinding layout_binding = {};
-	layout_binding.binding = 0;
-	layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	layout_binding.descriptorCount = 1;
-	layout_binding.stageFlags = VK_SHADER_STAGE_ALL;
-
-	const auto &device = GetDevicePtr();
-	auto descriptor_set_layout = myvk::DescriptorSetLayout::Create(device, {layout_binding});
-	auto descriptor_pool = myvk::DescriptorPool::Create(device, 1, {{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1}});
-	m_descriptor_set = myvk::DescriptorSet::Create(descriptor_pool, descriptor_set_layout);
-
-	m_descriptor_set->UpdateStorageBuffer(m_buffer, 0);
-}
-
 /* template <typename Func> inline long ns(Func &&func) {
     auto begin = std::chrono::high_resolution_clock::now();
     func();

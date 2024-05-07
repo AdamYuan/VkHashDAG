@@ -42,14 +42,16 @@ add_executable(VkHashDAG
         src/Camera.cpp
         src/DAGNodePool.cpp
         src/DAGColorPool.cpp
-        src/DAGRenderer.cpp
 
         src/VkPagedBuffer.cpp
         src/VkSparseBinder.cpp
+
+        src/rg/DAGRenderGraph.cpp
+        src/rg/TracePass.cpp
 )
 target_include_directories(VkHashDAG PRIVATE include)
 target_link_libraries(VkHashDAG PRIVATE
-        myvk::vulkan myvk::glfw myvk::imgui
+        myvk::vulkan myvk::glfw myvk::imgui myvk::rg
         libfork::libfork
         glm::glm
         progschj::ThreadPool

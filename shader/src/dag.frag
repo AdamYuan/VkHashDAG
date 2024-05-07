@@ -1,5 +1,5 @@
 #version 450
-layout(std430, set = 0, binding = 0) readonly buffer uuDAG { uint uDAG[]; };
+layout(std430, binding = 0) readonly buffer uuDAG { uint uDAG[]; };
 
 layout(location = 0) out vec4 oColor;
 

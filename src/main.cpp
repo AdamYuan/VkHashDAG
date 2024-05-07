@@ -1,7 +1,6 @@
 #include <myvk/FrameManager.hpp>
 #include <myvk/GLFWHelper.hpp>
 #include <myvk/ImGuiHelper.hpp>
-#include <myvk/ImGuiRenderer.hpp>
 #include <myvk/Instance.hpp>
 #include <myvk/Queue.hpp>
 
@@ -10,8 +9,8 @@
 #include "Camera.hpp"
 #include "DAGColorPool.hpp"
 #include "DAGNodePool.hpp"
-#include "DAGRenderer.hpp"
 #include "GPSQueueSelector.hpp"
+#include "rg/DAGRenderGraph.hpp"
 
 #include <ThreadPool.h>
 #include <libfork/schedule/busy_pool.hpp>
@@ -278,16 +277,17 @@ int main() {
 
 	auto camera = myvk::MakePtr<Camera>();
 	camera->m_speed = 0.01f;
-	auto dag_renderer = myvk::MakePtr<DAGRenderer>(dag_node_pool, render_pass, 0);
 
 	myvk::ImGuiInit(window, myvk::CommandPool::Create(generic_queue));
-
-	auto imgui_renderer = myvk::ImGuiRenderer::Create(render_pass, 1, kFrameCount);
 
 	auto framebuffer = myvk::ImagelessFramebuffer::Create(render_pass, {frame_manager->GetSwapchainImageViews()[0]});
 	frame_manager->SetResizeFunc([&framebuffer, &render_pass, &frame_manager](const VkExtent2D &) {
 		framebuffer = myvk::ImagelessFramebuffer::Create(render_pass, {frame_manager->GetSwapchainImageViews()[0]});
 	});
+
+	std::array<myvk::Ptr<rg::DAGRenderGraph>, kFrameCount> render_graphs;
+	for (auto &rg : render_graphs)
+		rg = myvk::MakePtr<rg::DAGRenderGraph>(frame_manager, camera, dag_node_pool, dag_color_pool);
 
 	double prev_time = glfwGetTime();
 
@@ -346,20 +346,13 @@ int main() {
 
 		if (frame_manager->NewFrame()) {
 			uint32_t current_frame = frame_manager->GetCurrentFrame();
+			auto &render_graph = render_graphs[frame_manager->GetCurrentFrame()];
+
 			const auto &command_buffer = frame_manager->GetCurrentCommandBuffer();
 
 			command_buffer->Begin(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
-
-			command_buffer->CmdBeginRenderPass(render_pass, {framebuffer},
-			                                   {frame_manager->GetCurrentSwapchainImageView()},
-			                                   {{{0.5f, 0.5f, 0.5f, 1.0f}}});
-			dag_renderer->CmdDrawPipeline(command_buffer, *camera, //
-			                              frame_manager->GetExtent().width, frame_manager->GetExtent().height,
-			                              static_cast<DAGRenderType>(render_type));
-			command_buffer->CmdNextSubpass();
-			imgui_renderer->CmdDrawPipeline(command_buffer, current_frame);
-			command_buffer->CmdEndRenderPass();
-
+			render_graph->SetCanvasSize(frame_manager->GetExtent());
+			render_graph->CmdExecute(command_buffer);
 			command_buffer->End();
 
 			frame_manager->Render();
