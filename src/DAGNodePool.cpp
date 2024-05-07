@@ -4,17 +4,39 @@
 
 #include "DAGNodePool.hpp"
 
-void DAGNodePool::create_vk_buffer(std::vector<myvk::Ptr<myvk::Queue>> &&queues) {
-	m_paged_buffer = VkPagedBuffer::Create(
-	    m_device_ptr, (VkDeviceSize)GetConfig().GetTotalWords() * sizeof(uint32_t),
-	    [this](const VkMemoryRequirements &mem_req) {
-		    m_page_bits_per_gpu_page =
-		        mem_req.alignment <= GetConfig().GetWordsPerPage() * sizeof(uint32_t)
-		            ? 0
-		            : std::countr_zero(mem_req.alignment / sizeof(uint32_t)) - GetConfig().word_bits_per_page;
-		    return (1u << (GetConfig().word_bits_per_page + m_page_bits_per_gpu_page)) * sizeof(uint32_t);
+#include <cassert>
+
+myvk::Ptr<DAGNodePool> DAGNodePool::Create(hashdag::Config<uint32_t> config,
+                                           const std::vector<myvk::Ptr<myvk::Queue>> &queues) {
+	if (queues.empty())
+		return nullptr;
+
+	auto device = queues[0]->GetDevicePtr();
+	auto buffer = VkPagedBuffer::Create(
+	    device, (VkDeviceSize)config.GetTotalWords() * sizeof(uint32_t),
+	    [&](const VkMemoryRequirements &mem_req) -> VkDeviceSize {
+		    assert(std::popcount(mem_req.alignment) == 1);
+
+		    uint32_t word_bits_per_alignment =
+		        std::bit_width(std::max(mem_req.alignment / sizeof(uint32_t), (VkDeviceSize)1)) - 1u;
+		    if (word_bits_per_alignment > config.word_bits_per_page) {
+			    uint32_t d = word_bits_per_alignment - config.word_bits_per_page;
+			    if (config.page_bits_per_bucket < d)
+				    return 0; // Failed to fit size
+			    config.page_bits_per_bucket -= d;
+			    config.word_bits_per_page += d;
+		    }
+
+		    return config.GetWordsPerPage() * sizeof(uint32_t);
 	    },
 	    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, queues);
+
+	if (buffer == nullptr)
+		return nullptr;
+
+	printf("%zu %u\n", buffer->GetPageSize() / sizeof(uint32_t), config.GetWordsPerPage());
+
+	return myvk::MakePtr<DAGNodePool>(std::move(config), std::move(buffer));
 }
 
 void DAGNodePool::create_vk_descriptor() {
@@ -24,11 +46,12 @@ void DAGNodePool::create_vk_descriptor() {
 	layout_binding.descriptorCount = 1;
 	layout_binding.stageFlags = VK_SHADER_STAGE_ALL;
 
-	auto descriptor_set_layout = myvk::DescriptorSetLayout::Create(m_device_ptr, {layout_binding});
-	auto descriptor_pool = myvk::DescriptorPool::Create(m_device_ptr, 1, {{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1}});
+	const auto &device = GetDevicePtr();
+	auto descriptor_set_layout = myvk::DescriptorSetLayout::Create(device, {layout_binding});
+	auto descriptor_pool = myvk::DescriptorPool::Create(device, 1, {{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1}});
 	m_descriptor_set = myvk::DescriptorSet::Create(descriptor_pool, descriptor_set_layout);
 
-	m_descriptor_set->UpdateStorageBuffer(m_paged_buffer, 0);
+	m_descriptor_set->UpdateStorageBuffer(m_buffer, 0);
 }
 
 /* template <typename Func> inline long ns(Func &&func) {
@@ -42,36 +65,25 @@ void DAGNodePool::Flush(const myvk::Ptr<VkSparseBinder> &binder) {
 	phmap::flat_hash_set<uint32_t> alloc_gpu_pages, free_gpu_pages;
 
 	// auto scan0_ns = ns([&]() {
-	for (const auto &it : m_page_write_ranges) {
-		uint32_t page_id = it.first, gpu_page_id = page_id >> m_page_bits_per_gpu_page;
-		if (!m_paged_buffer->IsPageExist(gpu_page_id))
-			alloc_gpu_pages.insert(gpu_page_id);
-	}
+	for (const auto &[page_id, _] : m_page_write_ranges)
+		if (!m_buffer->IsPageExist(page_id))
+			alloc_gpu_pages.insert(page_id);
 
-	for (uint32_t page_id : m_page_frees) {
-		uint32_t gpu_page_id = page_id >> m_page_bits_per_gpu_page;
+	for (uint32_t page_id : m_page_frees)
+		if (m_buffer->IsPageExist(page_id) && m_pages[page_id] == nullptr)
+			free_gpu_pages.insert(page_id);
 
-		uint32_t page_begin = gpu_page_id << m_page_bits_per_gpu_page;
-		uint32_t page_end = (gpu_page_id + 1u) << m_page_bits_per_gpu_page;
-
-		if (m_paged_buffer->IsPageExist(gpu_page_id) &&
-		    std::all_of(m_pages.get() + page_begin, m_pages.get() + page_end, [](auto &p) { return p == nullptr; }))
-			free_gpu_pages.insert(gpu_page_id);
-	}
 	// printf("%zu GPU pages deleted\n", free_gpu_pages.size());
 	/* });
 	printf("scan0 %lf ms\n", (double)scan0_ns / 1000000.0); */
 
-	m_paged_buffer->Alloc(binder, alloc_gpu_pages);
-	m_paged_buffer->Free(binder, free_gpu_pages);
+	m_buffer->Alloc(binder, alloc_gpu_pages);
+	m_buffer->Free(binder, free_gpu_pages);
 
 	// auto scan1_ns = ns([&]() {
 	for (const auto &[page_id, range] : m_page_write_ranges) {
-		uint32_t gpu_page_id = page_id >> m_page_bits_per_gpu_page;
-		uint32_t gpu_page_offset =
-		    ((page_id & ((1u << m_page_bits_per_gpu_page) - 1)) << GetConfig().word_bits_per_page) | range.begin;
-		std::copy(m_pages[page_id].get() + range.begin, m_pages[page_id].get() + range.end,
-		          m_paged_buffer->GetMappedPage<uint32_t>(gpu_page_id) + gpu_page_offset);
+		auto *p_page = m_pages[page_id].get();
+		std::copy(p_page + range.begin, p_page + range.end, m_buffer->GetMappedPage<uint32_t>(page_id) + range.begin);
 	}
 	/* });
 	printf("scan1 %lf ms\n", (double)scan1_ns / 1000000.0); */

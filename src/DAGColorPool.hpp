@@ -17,7 +17,7 @@
 #include <parallel_hashmap/phmap.h>
 #include <span>
 
-class DAGColorPool {
+class DAGColorPool final : public myvk::DeviceObjectBase {
 public:
 	template <typename T> using SafeLeafSpan = PagedSpan<SafePagedVector<uint32_t>, T>;
 	using Writer = hashdag::VBRChunkWriter<uint32_t, SafeLeafSpan>;
@@ -55,9 +55,7 @@ private:
 	Pointer m_root = {};
 
 	// Vulkan Stuff
-	myvk::Ptr<myvk::Device> m_device_ptr;
 	myvk::Ptr<VkPagedBuffer> m_node_buffer, m_leaf_buffer;
-	void create_vk_buffer(std::vector<myvk::Ptr<myvk::Queue>> &&queues);
 
 	// Flush related Stuff
 	uint32_t m_flushed_node_count{0}, m_flushed_node_page_count{0}, m_flushed_leaf_page_count{0};
@@ -124,13 +122,16 @@ private:
 	}
 
 public:
-	inline explicit DAGColorPool(const myvk::Ptr<myvk::Queue> &main_queue_ptr,
-	                             const myvk::Ptr<myvk::Queue> &sparse_queue_ptr, const Config &config)
-	    : m_device_ptr{main_queue_ptr->GetDevicePtr()}, m_config{config} {
-		create_vk_buffer({main_queue_ptr, sparse_queue_ptr});
-		m_nodes.Reset(m_node_buffer->GetPageTotal(), m_config.node_bits_per_node_page);
-		m_leaves.Reset(m_leaf_buffer->GetPageTotal(), m_config.word_bits_per_leaf_page);
+	inline DAGColorPool(const Config &config, myvk::Ptr<VkPagedBuffer> node_buffer,
+	                    myvk::Ptr<VkPagedBuffer> leaf_buffer)
+	    : m_config{config}, m_node_buffer{std::move(node_buffer)}, m_leaf_buffer{std::move(leaf_buffer)} {
+		m_nodes.Reset(m_node_buffer->GetPageTotal(), config.node_bits_per_node_page);
+		m_leaves.Reset(m_leaf_buffer->GetPageTotal(), config.word_bits_per_leaf_page);
 	}
+	static myvk::Ptr<DAGColorPool> Create(Config config, const std::vector<myvk::Ptr<myvk::Queue>> &queues);
+	inline ~DAGColorPool() override = default;
+
+	inline const myvk::Ptr<myvk::Device> &GetDevicePtr() const { return m_node_buffer->GetDevicePtr(); }
 
 	inline const Config &GetConfig() const { return m_config; }
 

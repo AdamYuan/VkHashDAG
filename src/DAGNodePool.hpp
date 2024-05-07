@@ -24,7 +24,8 @@
 #include "VkPagedBuffer.hpp"
 
 class DAGNodePool final
-    : public hashdag::NodePoolBase<DAGNodePool, uint32_t>,
+    : public myvk::DeviceObjectBase,
+      public hashdag::NodePoolBase<DAGNodePool, uint32_t>,
       public hashdag::NodePoolTraversal<DAGNodePool, uint32_t>,
       public hashdag::NodePoolThreadedEdit<DAGNodePool, uint32_t>,
       public hashdag::NodePoolThreadedGC<DAGNodePool, uint32_t, phmap::flat_hash_map, phmap::flat_hash_set> {
@@ -73,28 +74,23 @@ private:
 	hashdag::NodePointer<uint32_t> m_root{};
 
 	// GPU stuff
-	myvk::Ptr<myvk::Device> m_device_ptr;
-
-	myvk::Ptr<VkPagedBuffer> m_paged_buffer;
-	uint32_t m_page_bits_per_gpu_page;
-
+	myvk::Ptr<VkPagedBuffer> m_buffer;
 	myvk::Ptr<myvk::DescriptorSet> m_descriptor_set;
 
-	void create_vk_buffer(std::vector<myvk::Ptr<myvk::Queue>> &&queues);
+	void create_vk_buffer(hashdag::Config<uint32_t> *p_config, std::vector<myvk::Ptr<myvk::Queue>> &&queues);
 	void create_vk_descriptor();
 
 public:
-	DAGNodePool(const myvk::Ptr<myvk::Queue> &main_queue_ptr, const myvk::Ptr<myvk::Queue> &sparse_queue_ptr,
-	            const hashdag::Config<uint32_t> &config)
-	    : hashdag::NodePoolBase<DAGNodePool, uint32_t>(config), m_device_ptr{main_queue_ptr->GetDevicePtr()} {
-
+	inline DAGNodePool(const hashdag::Config<uint32_t> &config, myvk::Ptr<VkPagedBuffer> buffer)
+	    : hashdag::NodePoolBase<DAGNodePool, uint32_t>(config), m_buffer{std::move(buffer)} {
 		m_bucket_words = std::make_unique<std::atomic_uint32_t[]>(GetConfig().GetTotalBuckets());
 		m_pages = std::make_unique<std::unique_ptr<uint32_t[]>[]>(GetConfig().GetTotalPages());
-
-		create_vk_buffer({main_queue_ptr, sparse_queue_ptr});
 		create_vk_descriptor();
 	}
+	static myvk::Ptr<DAGNodePool> Create(hashdag::Config<uint32_t> config,
+	                                     const std::vector<myvk::Ptr<myvk::Queue>> &queues);
 	inline ~DAGNodePool() final = default;
+	inline const myvk::Ptr<myvk::Device> &GetDevicePtr() const { return m_buffer->GetDevicePtr(); }
 
 	void Flush(const myvk::Ptr<VkSparseBinder> &binder);
 

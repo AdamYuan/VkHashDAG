@@ -184,22 +184,24 @@ int main() {
 		render_pass = myvk::RenderPass::Create(device, state);
 	}
 
-	auto dag_node_pool = myvk::MakePtr<DAGNodePool>(generic_queue, sparse_queue,
-	                                                hashdag::DefaultConfig<uint32_t>{
-	                                                    .level_count = 17,
-	                                                    .top_level_count = 9,
-	                                                    .word_bits_per_page = 14,
-	                                                    .page_bits_per_bucket = 2,
-	                                                    .bucket_bits_per_top_level = 7,
-	                                                    .bucket_bits_per_bottom_level = 11,
-	                                                }());
-	auto dag_color_pool = myvk::MakePtr<DAGColorPool>(generic_queue, sparse_queue,
-	                                                  DAGColorPool::Config{
-	                                                      .leaf_level = 10,
-	                                                      .node_bits_per_node_page = 18,
-	                                                      .word_bits_per_leaf_page = 24,
-	                                                      .keep_history = true,
-	                                                  });
+	auto dag_node_pool = DAGNodePool::Create(
+	    hashdag::DefaultConfig<uint32_t>{
+	        .level_count = 17,
+	        .top_level_count = 9,
+	        .word_bits_per_page = 14,
+	        .page_bits_per_bucket = 2,
+	        .bucket_bits_per_top_level = 7,
+	        .bucket_bits_per_bottom_level = 11,
+	    }(),
+	    {generic_queue, sparse_queue});
+	auto dag_color_pool = DAGColorPool::Create(
+	    DAGColorPool::Config{
+	        .leaf_level = 10,
+	        .node_bits_per_node_page = 18,
+	        .word_bits_per_leaf_page = 24,
+	        .keep_history = true,
+	    },
+	    {generic_queue, sparse_queue});
 	auto sparse_binder = myvk::MakePtr<VkSparseBinder>(sparse_queue);
 
 	auto edit_ns = ns([&]() {

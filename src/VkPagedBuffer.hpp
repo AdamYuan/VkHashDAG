@@ -78,6 +78,9 @@ public:
 		vkGetBufferMemoryRequirements(device->GetHandle(), buffer, &page_memory_requirements);
 		page_memory_requirements.size = get_page_size(page_memory_requirements);
 
+		if (page_memory_requirements.size == 0)
+			return nullptr;
+
 		uint32_t page_total = (size + page_memory_requirements.size - 1) / page_memory_requirements.size;
 
 		auto ret = myvk::MakePtr<VkPagedBuffer>();
