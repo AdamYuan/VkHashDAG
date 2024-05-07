@@ -13,7 +13,7 @@
 #include "DAGRenderer.hpp"
 #include "GPSQueueSelector.hpp"
 
-#include <BS_thread_pool.hpp>
+#include <ThreadPool.h>
 #include <libfork/schedule/busy_pool.hpp>
 
 constexpr uint32_t kFrameCount = 3;
@@ -147,7 +147,7 @@ template <typename Func> inline long ns(Func &&func) {
 
 lf::busy_pool busy_pool(12);
 
-BS::thread_pool edit_pool(1);
+progschj::ThreadPool edit_pool(1);
 std::future<hashdag::NodePointer<uint32_t>> edit_future;
 
 float edit_radius = 128.0f;
@@ -258,7 +258,7 @@ int main() {
 	const auto push_edit = [dag_node_pool, device, &sparse_binder](const hashdag::Editor<uint32_t> auto &editor) {
 		if (edit_future.valid())
 			return;
-		edit_future = edit_pool.submit_task([dag_node_pool, device, editor, &sparse_binder]() {
+		edit_future = edit_pool.enqueue([dag_node_pool, device, editor, &sparse_binder]() {
 			hashdag::NodePointer<uint32_t> new_root_ptr;
 
 			auto edit_ns = ns([&]() {

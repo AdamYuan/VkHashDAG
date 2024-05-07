@@ -32,7 +32,7 @@ add_subdirectory(dep/MyVK)
 add_subdirectory(dep/glm)
 add_subdirectory(dep/libfork)
 add_subdirectory(dep/parallel-hashmap)
-add_subdirectory(dep/thread-pool)
+add_subdirectory(dep/ThreadPool)
 
 add_subdirectory(shader)
 
@@ -52,10 +52,11 @@ target_link_libraries(VkHashDAG PRIVATE
         myvk::vulkan myvk::glfw myvk::imgui
         libfork::libfork
         glm::glm
-        BS::thread_pool
+        progschj::ThreadPool
         phmap::phmap
         shader
 )
+# target_compile_options(VkHashDAG PRIVATE -fno-exceptions -fno-rtti)
 
 install(TARGETS VkHashDAG RUNTIME DESTINATION)
 
