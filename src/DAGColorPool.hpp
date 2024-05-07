@@ -20,7 +20,6 @@
 class DAGColorPool final : public myvk::DeviceObjectBase {
 public:
 	template <typename T> using SafeLeafSpan = PagedSpan<SafePagedVector<uint32_t>, T>;
-	using Writer = hashdag::VBRChunkWriter<uint32_t, SafeLeafSpan>;
 	struct Pointer {
 		static constexpr uint32_t kDataBits = 30u;
 		enum class Tag { kNull = 0, kNode, kLeaf, kColor };
@@ -43,6 +42,7 @@ public:
 private:
 	using Node = std::array<Pointer, 8>;
 	static_assert(sizeof(Node) == 8 * sizeof(uint32_t));
+
 	static constexpr uint32_t kWordBitsPerNode = 3;
 	static constexpr std::size_t kVBRStructWords = 2;
 	static_assert(kVBRStructWords == sizeof(hashdag::VBRMacroBlock) / sizeof(uint32_t));
@@ -153,13 +153,11 @@ public:
 		return Pointer{Pointer::Tag::kColor, hashdag::RGB8Color{color.Get()}.GetData()};
 	}
 
-	inline Writer WriteLeaf(Pointer ptr) const {
-		if (ptr.GetTag() != Pointer::Tag::kLeaf)
-			return Writer{};
-		return Writer{fetch_leaf_chunk(ptr.GetData() + 1)};
+	inline hashdag::VBRChunk<uint32_t, SafeLeafSpan> GetLeaf(Pointer ptr) const {
+		return ptr.GetTag() == Pointer::Tag::kLeaf ? fetch_leaf_chunk(ptr.GetData() + 1)
+		                                           : hashdag::VBRChunk<uint32_t, SafeLeafSpan>{};
 	}
-	inline Pointer FlushLeaf(Pointer ptr, Writer &&writer) {
-		hashdag::VBRChunk<uint32_t, std::vector> chunk = writer.Flush();
+	inline Pointer SetLeaf(Pointer ptr, hashdag::VBRChunk<uint32_t, std::vector> &&chunk) {
 		std::size_t data_size = chunk.GetMacroBlocks().size() * kVBRStructWords +
 		                        chunk.GetBlockHeaders().size() * kVBRStructWords +
 		                        chunk.GetWeightBits().GetWords().size() + 4;
@@ -172,7 +170,7 @@ public:
 			assert(idx % kVBRStructWords == 0 && block_size % kVBRStructWords == 0);
 			if (data_size <= block_size) {
 				// Space is enough, write and return
-				mark_leaf(idx, data_size);
+				mark_leaf(idx + 1, data_size - 1); // not mark the first "block size" indicator
 				write_leaf_chunk(idx + 1, chunk);
 				return ptr;
 			} else
@@ -193,10 +191,13 @@ public:
 	}
 	inline uint32_t GetLeafLevel() const { return m_config.leaf_level; }
 
+	void Flush(const myvk::Ptr<VkSparseBinder> &binder);
+
 	inline Pointer GetRoot() const { return m_root; }
 	inline void SetRoot(Pointer root) { m_root = root; }
 
-	void Flush(const myvk::Ptr<VkSparseBinder> &binder);
+	inline const auto &GetNodeBuffer() const { return m_node_buffer; }
+	inline const auto &GetLeafBuffer() const { return m_leaf_buffer; }
 };
 
 static_assert(hashdag::VBROctree<DAGColorPool, uint32_t>);

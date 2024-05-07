@@ -99,6 +99,8 @@ public:
 
 	inline const auto &GetDescriptorSet() const { return m_descriptor_set; }
 	inline const auto &GetDescriptorSetLayout() const { return m_descriptor_set->GetDescriptorSetLayoutPtr(); }
+
+	inline const auto &GetBuffer() const { return m_buffer; }
 };
 
 #endif // VKHASHDAG_VKNODEPOOL_HPP

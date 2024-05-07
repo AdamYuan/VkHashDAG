@@ -8,24 +8,25 @@
 
 #include "VBRColor.hpp"
 #include <span>
-#include <typeinfo>
 
 namespace hashdag {
 
+template <typename T> using VBROctreePointer = std::decay_t<decltype(std::declval<T>().GetNode({}, 0))>;
+template <typename T> using VBROctreeLeaf = std::decay_t<decltype(std::declval<T>().GetLeaf({}))>;
+template <typename T>
+using VBROctreeLeafWriter = std::decay_t<decltype(VBRChunkWriter{std::declval<VBROctreeLeaf<T>>()})>;
+
 template <typename T, typename Word>
-concept VBROctree = requires(T e, const T ce, typename T::Pointer pointer, typename T::Writer writer) {
-	typename T::Writer;
-	typename T::Pointer;
-
-	{ ce.GetNode(pointer, 0) } -> std::convertible_to<typename T::Pointer>;
+concept VBROctree = requires(T e, const T ce, VBROctreePointer<T> pointer, VBROctreeLeaf<T> leaf) {
+	{ ce.GetNode(pointer, 0) } -> std::convertible_to<decltype(pointer)>;
 	{
-		e.SetNode(pointer, std::declval<std::span<const typename T::Pointer, 8>>())
-	} -> std::convertible_to<typename T::Pointer>;
-	{ e.ClearNode(pointer) } -> std::convertible_to<typename T::Pointer>;
-	{ e.FillNode(pointer, VBRColor{}) } -> std::convertible_to<typename T::Pointer>;
+		e.SetNode(pointer, std::declval<std::span<const decltype(pointer), 8>>())
+	} -> std::convertible_to<decltype(pointer)>;
+	{ e.ClearNode(pointer) } -> std::convertible_to<decltype(pointer)>;
+	{ e.FillNode(pointer, VBRColor{}) } -> std::convertible_to<decltype(pointer)>;
 
-	{ ce.WriteLeaf(pointer) } -> std::convertible_to<typename T::Writer>;
-	{ e.FlushLeaf(pointer, std::move(writer)) } -> std::convertible_to<typename T::Pointer>;
+	{ ce.GetLeaf(pointer) } -> std::convertible_to<decltype(leaf)>;
+	{ e.SetLeaf(pointer, VBRChunk<Word, std::vector>{}) } -> std::convertible_to<decltype(pointer)>;
 	{ ce.GetLeafLevel() } -> std::convertible_to<Word>;
 };
 

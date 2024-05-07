@@ -25,13 +25,13 @@ concept VBREditor = requires(const T ce) {
 
 template <std::unsigned_integral Word, VBREditor<Word> Editor_T, VBROctree<Word> Octree_T> struct VBREditorWrapper {
 	struct NodeState {
-		typename Octree_T::Pointer octree_node;
-		typename Octree_T::Writer *p_writer;
+		VBROctreePointer<Octree_T> octree_node;
+		VBROctreeLeafWriter<Octree_T> *p_writer;
 	};
 
 	Editor_T editor;
 	Octree_T *p_octree;
-	typename Octree_T::Pointer octree_root;
+	VBROctreePointer<Octree_T> octree_root;
 
 	inline EditType EditNode(const Config<Word> &config, const NodeCoord<Word> &coord, NodePointer<Word> node_ptr,
 	                         NodeState &state, const NodeState &parent_state) const {
@@ -47,7 +47,7 @@ template <std::unsigned_integral Word, VBREditor<Word> Editor_T, VBROctree<Word>
 			else if (edit_type == EditType::kClear)
 				state.octree_node = p_octree->ClearNode(state.octree_node);
 			else if (edit_type == EditType::kProceed && coord.level == p_octree->GetLeafLevel())
-				state.p_writer = new typename Octree_T::Writer(p_octree->WriteLeaf(state.octree_node));
+				state.p_writer = new VBROctreeLeafWriter<Octree_T>(p_octree->GetLeaf(state.octree_node));
 		} else {
 			auto p_writer = parent_state.p_writer;
 			state.p_writer = p_writer;
@@ -70,7 +70,7 @@ template <std::unsigned_integral Word, VBREditor<Word> Editor_T, VBROctree<Word>
 	inline void JoinNode(const Config<Word> &, const NodeCoord<Word> &coord, NodeState &state,
 	                     std::span<const NodeState, 8> child_states) const {
 		if (coord.level == p_octree->GetLeafLevel()) {
-			state.octree_node = p_octree->FlushLeaf(state.octree_node, std::move(*state.p_writer));
+			state.octree_node = p_octree->SetLeaf(state.octree_node, state.p_writer->Flush());
 			delete state.p_writer;
 		} else if (coord.level < p_octree->GetLeafLevel()) {
 			std::array<typename Octree_T::Pointer, 8> octree_children = {
@@ -82,7 +82,7 @@ template <std::unsigned_integral Word, VBREditor<Word> Editor_T, VBROctree<Word>
 	}
 	inline void JoinLeaf(const Config<Word> &, const NodeCoord<Word> &coord, NodeState &state) const {
 		if (coord.level == p_octree->GetLeafLevel()) {
-			state.octree_node = p_octree->FlushLeaf(state.octree_node, std::move(*state.p_writer));
+			state.octree_node = p_octree->SetLeaf(state.octree_node, state.p_writer->Flush());
 			delete state.p_writer;
 		}
 	}

@@ -34,8 +34,6 @@ myvk::Ptr<DAGNodePool> DAGNodePool::Create(hashdag::Config<uint32_t> config,
 	if (buffer == nullptr)
 		return nullptr;
 
-	printf("%zu %u\n", buffer->GetPageSize() / sizeof(uint32_t), config.GetWordsPerPage());
-
 	return myvk::MakePtr<DAGNodePool>(std::move(config), std::move(buffer));
 }
 

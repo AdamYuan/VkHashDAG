@@ -59,7 +59,7 @@ template <std::unsigned_integral Word, template <typename> typename Container> c
 private:
 	inline static constexpr Word kWordBits = VBRWordInfo<Word>::kBits, kWordMask = VBRWordInfo<Word>::kMask,
 	                             kWordMaskBits = VBRWordInfo<Word>::kMaskBits;
-	Container<Word> m_bits;
+	Container<Word> m_bits{};
 	static_assert(VBRContainer<Container<Word>, Word>);
 
 	template <std::unsigned_integral, template <typename> typename> friend class VBRBitset;
@@ -248,8 +248,8 @@ public:
 #else
 private:
 #endif
-	Container<VBRMacroBlock> m_macro_blocks;
-	Container<VBRBlockHeader> m_block_headers;
+	Container<VBRMacroBlock> m_macro_blocks{};
+	Container<VBRBlockHeader> m_block_headers{};
 	VBRBitset<Word, Container> m_weight_bits;
 
 	static_assert(VBRContainer<Container<VBRMacroBlock>, VBRMacroBlock>);
@@ -304,10 +304,8 @@ private:
 
 public:
 	inline VBRChunkIterator() = default;
-	template <template <typename> typename SrcContainer>
-	inline explicit VBRChunkIterator(const VBRChunk<Word, SrcContainer> &src) : m_chunk{src} {}
-	template <template <typename> typename SrcContainer>
-	inline explicit VBRChunkIterator(VBRChunk<Word, SrcContainer> &&src) : m_chunk{std::move(src)} {}
+	inline explicit VBRChunkIterator(const VBRChunk<Word, Container> &src) : m_chunk{src} {}
+	inline explicit VBRChunkIterator(VBRChunk<Word, Container> &&src) : m_chunk{std::move(src)} {}
 
 	inline bool Empty() const { return m_chunk.Empty(); }
 	inline const VBRChunk<Word, Container> &GetChunk() const { return m_chunk; }
@@ -357,7 +355,7 @@ public:
 	}
 };
 
-template <std::unsigned_integral Word, template <typename> typename SrcContainer> class VBRChunkWriter {
+template <std::unsigned_integral Word, template <typename> typename Container> class VBRChunkWriter {
 #ifdef HASHDAG_TEST
 public:
 #else
@@ -370,7 +368,7 @@ private:
 	std::vector<VBRBlockHeader> m_block_headers;
 	VBRBitsetWriter<Word> m_weight_bits;
 
-	VBRChunkIterator<Word, SrcContainer> m_src_iterator;
+	VBRChunkIterator<Word, Container> m_src_iterator;
 	uint32_t m_voxel_count = 0;
 
 	inline void append(uint32_t colors, uint32_t bits_per_weight, uint32_t voxel_count, uint32_t &weight_start) {
@@ -427,7 +425,7 @@ private:
 	inline void copy(uint32_t count) {
 		uint32_t weight_start = m_weight_bits.GetBitCount(), prev_weight_start = weight_start,
 		         src_weight_start = m_src_iterator.GetWeightIndex();
-		m_src_iterator.Jump(count, [&](const VBRChunkIterator<Word, SrcContainer> &iterator, uint32_t count) {
+		m_src_iterator.Jump(count, [&](const VBRChunkIterator<Word, Container> &iterator, uint32_t count) {
 			VBRBlockHeader block = iterator.GetBlockHeader();
 			append(block.colors, block.GetBitsPerWeight(), count, weight_start);
 		});
@@ -446,10 +444,9 @@ private:
 
 public:
 	inline VBRChunkWriter() = default;
-	template <template <typename> typename Container>
 	inline explicit VBRChunkWriter(const VBRChunk<Word, Container> &chunk) : m_src_iterator(chunk) {}
-	inline explicit VBRChunkWriter(const VBRChunkIterator<Word, SrcContainer> &src_iterator)
-	    : m_src_iterator(src_iterator) {}
+	inline explicit VBRChunkWriter(VBRChunk<Word, Container> &&chunk) : m_src_iterator(std::move(chunk)) {}
+
 	inline uint32_t GetVoxelCount() const { return m_voxel_count; }
 	inline VBRChunk<Word, std::vector> Flush() {
 		return VBRChunk<Word, std::vector>{std::move(m_macro_blocks), std::move(m_block_headers),
@@ -471,7 +468,7 @@ public:
 		VBRColor color = {};
 		if (!m_src_iterator.Empty())
 			m_src_iterator.Next(
-			    [&](const VBRChunkIterator<Word, SrcContainer> &iterator) { color = iterator.GetColor(); });
+			    [&](const VBRChunkIterator<Word, Container> &iterator) { color = iterator.GetColor(); });
 		editor(color);
 		push_one(color);
 	}
