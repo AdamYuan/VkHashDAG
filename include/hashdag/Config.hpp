@@ -27,6 +27,7 @@ template <std::unsigned_integral Word> struct Config {
 	inline Word GetWordBitsPerBucket() const { return word_bits_per_page + page_bits_per_bucket; }
 	inline Word GetBucketsAtLevel(Word level) const { return Word(1u) << bucket_bits_each_level[level]; }
 	inline Word GetNodeLevels() const { return bucket_bits_each_level.size(); }
+	inline Word GetLeafLevel() const { return GetNodeLevels(); }
 	inline Word GetVoxelLevel() const { return GetNodeLevels() + 1u; }
 	inline Word GetResolution() const { return Word(1u) << GetVoxelLevel(); }
 	inline std::vector<Word> GetLevelBaseBucketIndices() const {

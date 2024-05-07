@@ -1,11 +1,22 @@
-#version 450
-layout(std430, binding = 0) readonly buffer uuDAG { uint uDAG[]; };
+#version 460
+#extension GL_EXT_control_flow_attributes : enable
+
+layout(std430, binding = 0) readonly buffer uuDAGNodes { uint uDAGNodes[]; };
+
+struct ColorNode {
+	uint child[8];
+};
+layout(std430, binding = 1) readonly buffer uuColorNodes { ColorNode uColorNodes[]; };
+layout(std430, binding = 2) readonly buffer uuColorLeaves { uint uColorLeaves[]; };
 
 layout(location = 0) out vec4 oColor;
 
 layout(push_constant) uniform uuPushConstant {
 	float uPosX, uPosY, uPosZ, uLookX, uLookY, uLookZ, uSideX, uSideY, uSideZ, uUpX, uUpY, uUpZ;
-	uint uWidth, uHeight, uDAGRoot, uDAGNodeLevels;
+	uint uWidth, uHeight;
+	uint uVoxelLevel;
+	uint uDAGRoot, uDAGLeafLevel;
+	uint uColorRoot, uColorLeafLevel;
 	float uProjectionFactor;
 	uint uType;
 };
@@ -45,12 +56,12 @@ struct StackItem {
 } stack[STACK_SIZE + 1];
 
 uint DAG_GetLeafFirstChildBits(in const uint node) {
-	/* uvec2 l = uvec2(uDAG[node], uDAG[node + 1]);
+	/* uvec2 l = uvec2(uDAGNodes[node], uDAGNodes[node + 1]);
 	l |= l >> 1;
 	l |= l >> 2;
 	l |= l >> 4;
 	l &= 0x01010101u; */
-	uint l0 = uDAG[node], l1 = uDAG[node + 1];
+	uint l0 = uDAGNodes[node], l1 = uDAGNodes[node + 1];
 	return ((l0 & 0x000000FFu) == 0u ? 0u : 0x01u) | ((l0 & 0x0000FF00u) == 0u ? 0u : 0x02u) |
 	       ((l0 & 0x00FF0000u) == 0u ? 0u : 0x04u) | ((l0 & 0xFF000000u) == 0u ? 0u : 0x08u) |
 	       ((l1 & 0x000000FFu) == 0u ? 0u : 0x10u) | ((l1 & 0x0000FF00u) == 0u ? 0u : 0x20u) |
@@ -58,11 +69,16 @@ uint DAG_GetLeafFirstChildBits(in const uint node) {
 }
 
 bool DAG_RayMarch(in const uint root,
+                  in const uint leaf_level,
                   in const float proj_factor,
                   vec3 o,
                   vec3 d,
-                  out vec3 o_pos,
-                  out vec3 o_normal,
+                  out vec3 o_hit_pos,
+                  out vec3 o_norm,
+                  out uvec3 o_vox_pos,
+                  out uint o_vox_size,
+                  out vec3 o_vox_min,
+                  out vec3 o_vox_max,
                   out uint o_iter) {
 	if (root == -1)
 		return false;
@@ -108,14 +124,14 @@ bool DAG_RayMarch(in const uint root,
 	uint scale = STACK_SIZE - 1;
 	float scale_exp2 = 0.5; // exp2( scale - STACK_SIZE )
 
-	const uint leaf_scale = STACK_SIZE - uDAGNodeLevels;
+	const uint leaf_scale = STACK_SIZE - leaf_level;
 
 	while (scale < STACK_SIZE) {
 		++iter;
 
 		if (child_bits == 0u)
-			child_bits =
-			    scale > leaf_scale ? uDAG[parent] : (scale == leaf_scale ? DAG_GetLeafFirstChildBits(parent) : parent);
+			child_bits = scale > leaf_scale ? uDAGNodes[parent]
+			                                : (scale == leaf_scale ? DAG_GetLeafFirstChildBits(parent) : parent);
 		// Determine maximum t-value of the cube by evaluating
 		// tx(), ty(), and tz() at its corner.
 
@@ -143,8 +159,8 @@ bool DAG_RayMarch(in const uint root,
 				h = tc_max;
 
 				parent = scale > leaf_scale
-				             ? uDAG[parent + 1 + bitCount(child_bits & (child_mask - 1))]
-				             : (uDAG[parent + (child_shift >> 2u)] >> ((child_shift & 3u) << 3u)) & 0xFFu;
+				             ? uDAGNodes[parent + 1 + bitCount(child_bits & (child_mask - 1))]
+				             : (uDAGNodes[parent + (child_shift >> 2u)] >> ((child_shift & 3u) << 3u)) & 0xFFu;
 
 				idx = 0u;
 				--scale;
@@ -212,6 +228,7 @@ bool DAG_RayMarch(in const uint root,
 
 	vec3 t_corner = t_coef * (pos + scale_exp2) - t_bias;
 
+	// normal
 	vec3 norm = (t_corner.x > t_corner.y && t_corner.x > t_corner.z)
 	                ? vec3(-1, 0, 0)
 	                : (t_corner.y > t_corner.z ? vec3(0, -1, 0) : vec3(0, 0, -1));
@@ -222,27 +239,55 @@ bool DAG_RayMarch(in const uint root,
 	if ((octant_mask & 4u) == 0u)
 		norm.z = -norm.z;
 
-	// Undo mirroring of the coordinate system.
-	if ((octant_mask & 1u) != 0u)
-		pos.x = 3.0 - scale_exp2 - pos.x;
-	if ((octant_mask & 2u) != 0u)
-		pos.y = 3.0 - scale_exp2 - pos.y;
-	if ((octant_mask & 4u) != 0u)
-		pos.z = 3.0 - scale_exp2 - pos.z;
+	const uint voxel_level = leaf_level + 1u, voxel_scale = STACK_SIZE - voxel_level;
 
-	// Output results.
-	o_pos = clamp(o + t_min * d, pos, pos + scale_exp2);
+	// voxel size & position
+	uint vox_size = 1u << (scale - voxel_scale);
+	uvec3 vox_pos = (floatBitsToUint(pos) & 0x7FFFFFu) >> voxel_scale;
+	if ((octant_mask & 1u) != 0u)
+		vox_pos.x = (1u << voxel_level) - vox_size - vox_pos.x;
+	if ((octant_mask & 2u) != 0u)
+		vox_pos.y = (1u << voxel_level) - vox_size - vox_pos.y;
+	if ((octant_mask & 4u) != 0u)
+		vox_pos.z = (1u << voxel_level) - vox_size - vox_pos.z;
+
+	// float voxel bounds & hit position
+	vec3 vox_min = uintBitsToFloat(vox_pos << voxel_scale | 127u << 23u),
+	     vox_max = uintBitsToFloat((vox_pos + vox_size) << voxel_scale | 127u << 23u);
+	vec3 hit_pos = clamp(o + t_min * d, vox_min, vox_max);
 	if (norm.x != 0)
-		o_pos.x = norm.x > 0 ? pos.x + scale_exp2 + epsilon * 2 : pos.x - epsilon;
+		hit_pos.x = norm.x > 0 ? vox_max.x + epsilon * 2 : vox_min.x - epsilon;
 	if (norm.y != 0)
-		o_pos.y = norm.y > 0 ? pos.y + scale_exp2 + epsilon * 2 : pos.y - epsilon;
+		hit_pos.y = norm.y > 0 ? vox_max.y + epsilon * 2 : vox_min.y - epsilon;
 	if (norm.z != 0)
-		o_pos.z = norm.z > 0 ? pos.z + scale_exp2 + epsilon * 2 : pos.z - epsilon;
-	o_pos -= 1.0;
-	o_normal = norm;
+		hit_pos.z = norm.z > 0 ? vox_max.z + epsilon * 2 : vox_min.z - epsilon;
+	hit_pos -= 1.0, vox_min -= 1.0, vox_max -= 1.0;
+
+	// Output
+	o_hit_pos = hit_pos;
+	o_norm = norm;
+	o_vox_pos = vox_pos;
+	o_vox_size = vox_size;
+	o_vox_min = vox_min;
+	o_vox_max = vox_max;
 	o_iter = iter;
 
 	return scale < STACK_SIZE && t_min <= t_max;
+}
+
+vec3 Color_Fetch(in const uint root, in const uint voxel_level, in const uint leaf_level, in const uvec3 vox_pos) {
+	[[unroll]] for (uint ptr = root, l = voxel_level - 1u; l >= leaf_level; --l) {
+		uint tag = ptr >> 30u, data = ptr & 0x3FFFFFFFu;
+		if (tag == 0)
+			return vec3(0);
+		if (tag == 1)
+			return unpackUnorm4x8(data).rgb;
+		if (tag == 2)
+			return vec3(0); // Read VBR Block
+		if (tag == 3)
+			ptr = uColorNodes[data][0];
+	}
+	return vec3(0);
 }
 
 vec3 Camera_GenRay() {
@@ -257,12 +302,15 @@ vec3 Heat(in float x) { return sin(clamp(x, 0.0, 1.0) * 3.0 - vec3(1, 2, 3)) * 0
 void main() {
 	vec3 o = vec3(uPosX, uPosY, uPosZ), d = Camera_GenRay();
 
-	vec3 pos, norm;
-	uint iter;
-	bool hit = DAG_RayMarch(uDAGRoot, uProjectionFactor, o, d, pos, norm, iter);
+	vec3 hit_pos, norm, vox_min, vox_max;
+	uvec3 vox_pos;
+	uint vox_size, iter;
+	bool hit = DAG_RayMarch(uDAGRoot, uDAGLeafLevel, uProjectionFactor, o, d, hit_pos, norm, vox_pos, vox_size, vox_min,
+	                        vox_max, iter);
 
 	if (uType == 0)
-		oColor = vec4(hit ? vec3(max(dot(norm, normalize(vec3(4, 5, 3))), 0.0) * .5 + .5) : vec3(0), 1.0);
+		// oColor = vec4(hit ? vec3(max(dot(norm, normalize(vec3(4, 5, 3))), 0.0) * .5 + .5) : vec3(0), 1.0);
+		oColor = vec4(hit ? vec3(vox_pos) / vec3(10000.0) : vec3(0), 1.0);
 	else if (uType == 1)
 		oColor = hit ? vec4(norm * .5 + .5, 1.0) : vec4(0, 0, 0, 1);
 	else

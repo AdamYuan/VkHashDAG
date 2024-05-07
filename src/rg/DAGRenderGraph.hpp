@@ -20,6 +20,8 @@ public:
 	                        const myvk::Ptr<DAGNodePool> &node_pool, const myvk::Ptr<DAGColorPool> &color_pool);
 	~DAGRenderGraph() override = default;
 	void PreExecute() const override;
+
+	void SetRenderType(uint32_t x);
 };
 
 } // namespace rg

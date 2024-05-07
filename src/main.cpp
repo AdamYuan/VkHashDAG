@@ -351,6 +351,7 @@ int main() {
 			const auto &command_buffer = frame_manager->GetCurrentCommandBuffer();
 
 			command_buffer->Begin(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+			render_graph->SetRenderType(render_type);
 			render_graph->SetCanvasSize(frame_manager->GetExtent());
 			render_graph->CmdExecute(command_buffer);
 			command_buffer->End();

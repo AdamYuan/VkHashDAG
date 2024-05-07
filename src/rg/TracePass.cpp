@@ -6,6 +6,18 @@
 
 namespace rg {
 
+namespace tracer_pass {
+struct PC_Data {
+	glm::vec3 pos, look, side, up;
+	uint32_t width, height;
+	uint32_t voxel_levels;
+	uint32_t dag_root, dag_node_level;
+	uint32_t color_root, color_leaf_level;
+	float proj_factor;
+	uint32_t type;
+};
+} // namespace tracer_pass
+
 TracePass::TracePass(myvk_rg::Parent parent, const Args &args) : myvk_rg::GraphicsPassBase(parent) {
 	m_camera_ptr = args.camera;
 	m_node_pool_ptr = args.node_pool;
@@ -27,7 +39,7 @@ myvk::Ptr<myvk::GraphicsPipeline> TracePass::CreatePipeline() const {
 	                                                    {VkPushConstantRange{
 	                                                        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
 	                                                        .offset = 0,
-	                                                        .size = 13 * sizeof(float) + 5 * sizeof(uint32_t),
+	                                                        .size = sizeof(tracer_pass::PC_Data),
 	                                                    }});
 
 	constexpr uint32_t kVertSpv[] = {
@@ -68,23 +80,31 @@ void TracePass::CmdExecute(const myvk::Ptr<myvk::CommandBuffer> &command_buffer)
 	auto extent = GetRenderGraphPtr()->GetCanvasSize();
 	float aspect_ratio = float(extent.width) / float(extent.height);
 
-	static_assert(sizeof(float) == sizeof(uint32_t));
-	uint32_t pc_data[18];
-	*(glm::vec3 *)(pc_data) = m_camera_ptr->m_position;
-	*(Camera::LookSideUp *)(pc_data + 3) = m_camera_ptr->GetLookSideUp(aspect_ratio);
-	pc_data[12] = extent.width;
-	pc_data[13] = extent.height;
-	pc_data[14] = *m_node_pool_ptr->GetRoot();
-	pc_data[15] = m_node_pool_ptr->GetConfig().GetNodeLevels();
+	auto look_side_up = m_camera_ptr->GetLookSideUp(aspect_ratio);
+
 	float inv_2tan_half_fov = 1.0f / (2.0f * glm::tan(0.5f * m_camera_ptr->m_fov));
 	float screen_divisor = 1.0f;
 	float screen_tolerance = 1.0f / (float(extent.height) / screen_divisor);
 	float projection_factor = inv_2tan_half_fov / screen_tolerance;
-	*(float *)(pc_data + 16) = projection_factor;
-	pc_data[17] = 0; // static_cast<uint32_t>(render_type);
+
+	tracer_pass::PC_Data pc_data{
+	    .pos = m_camera_ptr->m_position,
+	    .look = look_side_up.look,
+	    .side = look_side_up.side,
+	    .up = look_side_up.up,
+	    .width = extent.width,
+	    .height = extent.height,
+	    .voxel_levels = m_node_pool_ptr->GetConfig().GetVoxelLevel(),
+	    .dag_root = *m_node_pool_ptr->GetRoot(),
+	    .dag_node_level = m_node_pool_ptr->GetConfig().GetNodeLevels(),
+	    .color_root = m_color_pool_ptr->GetRoot().pointer,
+	    .color_leaf_level = m_color_pool_ptr->GetLeafLevel(),
+	    .proj_factor = projection_factor,
+	    .type = m_render_type,
+	};
 
 	command_buffer->CmdPushConstants(GetVkPipeline()->GetPipelineLayoutPtr(), VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-	                                 sizeof(pc_data), pc_data);
+	                                 sizeof(pc_data), &pc_data);
 	command_buffer->CmdDraw(3, 1, 0, 0);
 }
 

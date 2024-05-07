@@ -22,7 +22,7 @@ public:
 	template <typename T> using SafeLeafSpan = PagedSpan<SafePagedVector<uint32_t>, T>;
 	struct Pointer {
 		static constexpr uint32_t kDataBits = 30u;
-		enum class Tag { kNull = 0, kNode, kLeaf, kColor };
+		enum class Tag { kNull = 0, kColor, kLeaf, kNode };
 		uint32_t pointer;
 		inline Pointer() : Pointer(Tag::kNull, 0u) {}
 		inline Pointer(Tag tag, uint32_t data) : pointer{(static_cast<uint32_t>(tag) << kDataBits) | data} {}
