@@ -161,8 +161,13 @@ template <typename Func> inline long ns(Func &&func) {
 
 lf::busy_pool busy_pool(12);
 
+struct EditResult {
+	hashdag::NodePointer<uint32_t> node_ptr;
+	std::optional<DAGColorPool::Pointer> opt_color_ptr;
+};
+
 progschj::ThreadPool edit_pool(1);
-std::future<hashdag::NodePointer<uint32_t>> edit_future;
+std::future<EditResult> edit_future;
 
 float edit_radius = 128.0f;
 int render_type = 0;
@@ -185,19 +190,6 @@ int main() {
 
 	auto frame_manager = myvk::FrameManager::Create(generic_queue, present_queue, false, kFrameCount);
 
-	myvk::Ptr<myvk::RenderPass> render_pass;
-	{
-		myvk::RenderPassState state{2, 1};
-		state.RegisterAttachment(0, "color_attachment", frame_manager->GetSwapchain()->GetImageFormat(),
-		                         VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_SAMPLE_COUNT_1_BIT,
-		                         VK_ATTACHMENT_LOAD_OP_CLEAR, VK_ATTACHMENT_STORE_OP_STORE);
-
-		state.RegisterSubpass(0, "color_pass").AddDefaultColorAttachment("color_attachment", nullptr);
-		state.RegisterSubpass(1, "gui_pass").AddDefaultColorAttachment("color_attachment", "color_pass");
-
-		render_pass = myvk::RenderPass::Create(device, state);
-	}
-
 	auto dag_node_pool = DAGNodePool::Create(
 	    hashdag::DefaultConfig<uint32_t>{
 	        .level_count = 17,
@@ -218,75 +210,87 @@ int main() {
 	    {generic_queue, sparse_queue});
 	auto sparse_binder = myvk::MakePtr<VkSparseBinder>(sparse_queue);
 
-	auto edit_ns = ns([&]() {
-		const auto edit = [&](hashdag::VBREditor<uint32_t> auto &&vbr_editor) {
-			using Editor_T = std::decay_t<decltype(vbr_editor)>;
-			dag_node_pool->ThreadedEdit(&busy_pool, dag_node_pool->GetRoot(),
-			                            hashdag::VBREditorWrapper<uint32_t, Editor_T, DAGColorPool>{
-			                                .editor = std::forward<Editor_T>(vbr_editor),
-			                                .p_octree = dag_color_pool.get(),
-			                                .octree_root = dag_color_pool->GetRoot(),
-			                            },
-			                            dag_color_pool->GetLeafLevel(),
-			                            [&](hashdag::NodePointer<uint32_t> root_ptr, auto &&state) {
-				                            dag_node_pool->SetRoot(root_ptr);
-				                            dag_color_pool->SetRoot(state.octree_node);
-			                            });
-		};
-		edit(AABBEditor{
-		    .aabb_min = {0, 0, 0},
-		    .aabb_max = {5000, 5000, 5000},
-		    .color = hashdag::RGB8Color{0x00FFFF},
+	const auto edit = [&]<hashdag::Editor<uint32_t> Editor_T>(Editor_T &&editor) -> EditResult {
+		return dag_node_pool->ThreadedEdit(&busy_pool, dag_node_pool->GetRoot(), std::forward<Editor_T>(editor),
+		                                   dag_color_pool->GetLeafLevel(),
+		                                   [&](hashdag::NodePointer<uint32_t> root_ptr, auto &&state) -> EditResult {
+			                                   if constexpr (requires { state.octree_node; })
+				                                   return {root_ptr, state.octree_node};
+			                                   else
+				                                   return {root_ptr, std::nullopt};
+		                                   });
+	};
+	const auto vbr_edit = [&]<hashdag::VBREditor<uint32_t> VBREditor_T>(VBREditor_T &&vbr_editor) {
+		return edit(hashdag::VBREditorWrapper<uint32_t, VBREditor_T, DAGColorPool>{
+		    .editor = std::forward<VBREditor_T>(vbr_editor),
+		    .p_octree = dag_color_pool.get(),
+		    .octree_root = dag_color_pool->GetRoot(),
 		});
-		edit(AABBEditor{
-		    .aabb_min = {1001, 1000, 1000},
-		    .aabb_max = {10000, 10000, 10000},
-		    .color = hashdag::RGB8Color{0xFF00FF},
-		});
-		edit(SphereEditor<true>{
-		    .center = {5005, 5000, 5000},
-		    .r2 = 2000 * 2000,
-		    .color = hashdag::RGB8Color{0xFF0000},
-		});
-		edit(SphereEditor<false>{
-		    .center = {10000, 10000, 10000},
-		    .r2 = 4000 * 4000,
-		    .color = {},
-		});
-	});
-	printf("edit cost %lf ms\n", (double)edit_ns / 1000000.0);
-	printf("root = %d\n", dag_color_pool->GetRoot().GetData());
-	auto flush_ns = ns([&]() {
+	};
+	const auto stateless_edit = [&]<hashdag::StatelessEditor<uint32_t> StatelessEditor_T>(StatelessEditor_T &&editor) {
+		return edit(hashdag::StatelessEditorWrapper<uint32_t, StatelessEditor_T>{
+		    .editor = std::forward<StatelessEditor_T>(editor)});
+	};
+	const auto gc = [&]() -> EditResult {
+		return {.node_ptr = dag_node_pool->ThreadedGC(&busy_pool, dag_node_pool->GetRoot()),
+		        .opt_color_ptr = std::nullopt};
+	};
+	const auto set_root = [&](const EditResult &edit_result) {
+		dag_node_pool->SetRoot(edit_result.node_ptr);
+		if (edit_result.opt_color_ptr)
+			dag_color_pool->SetRoot(*edit_result.opt_color_ptr);
+	};
+	const auto flush = [&]() {
 		dag_node_pool->Flush(sparse_binder);
 		dag_color_pool->Flush(sparse_binder);
 		auto fence = myvk::Fence::Create(device);
 		if (sparse_binder->QueueBind({}, {}, fence) == VK_SUCCESS)
 			fence->Wait();
-	});
-	printf("flush cost %lf ms\n", (double)flush_ns / 1000000.0);
-
-	const auto pop_edit_result = [dag_node_pool]() {
-		if (edit_future.valid() && edit_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
-			dag_node_pool->SetRoot(edit_future.get());
 	};
-	const auto push_edit = [dag_node_pool, device, &sparse_binder](const hashdag::Editor<uint32_t> auto &editor) {
+
+	{
+		auto edit_ns = ns([&]() {
+			set_root(vbr_edit(AABBEditor{
+			    .aabb_min = {1001, 1000, 1000},
+			    .aabb_max = {10000, 10000, 10000},
+			    .color = hashdag::RGB8Color{0xFFFF00},
+			}));
+			set_root(vbr_edit(AABBEditor{
+			    .aabb_min = {0, 0, 0},
+			    .aabb_max = {5000, 5000, 5000},
+			    .color = hashdag::RGB8Color{0x00FFFF},
+			}));
+			set_root(vbr_edit(SphereEditor<true>{
+			    .center = {5005, 5000, 5000},
+			    .r2 = 2000 * 2000,
+			    .color = hashdag::RGB8Color{0x0000FF},
+			}));
+			set_root(stateless_edit(SphereEditor<false>{
+			    .center = {10000, 10000, 10000},
+			    .r2 = 4000 * 4000,
+			    .color = {},
+			}));
+		});
+		printf("edit cost %lf ms\n", (double)edit_ns / 1000000.0);
+		printf("root = %d\n", dag_color_pool->GetRoot().GetData());
+		auto flush_ns = ns([&]() { flush(); });
+		printf("flush cost %lf ms\n", (double)flush_ns / 1000000.0);
+	}
+
+	const auto pop_edit_result = [&]() {
+		if (edit_future.valid() && edit_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+			set_root(edit_future.get());
+	};
+	const auto push_edit = [&]<typename Editor_T>(auto &&edit_func, Editor_T &&editor) {
 		if (edit_future.valid())
 			return;
-		edit_future = edit_pool.enqueue([dag_node_pool, device, editor, &sparse_binder]() {
-			hashdag::NodePointer<uint32_t> new_root_ptr;
-
-			auto edit_ns = ns([&]() {
-				new_root_ptr = dag_node_pool->ThreadedEdit(&busy_pool, dag_node_pool->GetRoot(), editor, 10);
-			});
+		edit_future = edit_pool.enqueue([&]() {
+			EditResult result;
+			auto edit_ns = ns([&]() { result = edit_func(std::forward<Editor_T>(editor)); });
 			printf("edit cost %lf ms\n", (double)edit_ns / 1000000.0);
-			auto flush_ns = ns([&]() {
-				dag_node_pool->Flush(sparse_binder);
-				auto fence = myvk::Fence::Create(device);
-				if (sparse_binder->QueueBind({}, {}, fence) == VK_SUCCESS)
-					fence->Wait();
-			});
+			auto flush_ns = ns([&]() { flush(); });
 			printf("flush cost %lf ms\n", (double)flush_ns / 1000000.0);
-			return new_root_ptr;
+			return result;
 		});
 	};
 
@@ -319,17 +323,17 @@ int main() {
 				auto r2 = uint64_t(edit_radius * edit_radius);
 
 				if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
-					push_edit(hashdag::StatelessEditorWrapper<uint32_t, SphereEditor<false>>{SphereEditor<false>{
-					    .center = up,
-					    .r2 = r2,
-					}});
+					push_edit(stateless_edit, SphereEditor<false>{
+					                              .center = up,
+					                              .r2 = r2,
+					                          });
 				} else if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
-					push_edit(hashdag::StatelessEditorWrapper<uint32_t, SphereEditor<>>{SphereEditor{
-					    .center = up,
-					    .r2 = r2,
-					}});
+					push_edit(vbr_edit, SphereEditor{
+					                        .center = up,
+					                        .r2 = r2,
+					                        .color = hashdag::VBRColor{0x00FF00},
+					                    });
 				}
-				// printf("%f %f %f\n", p->x, p->y, p->z);
 			}
 		}
 
@@ -340,15 +344,9 @@ int main() {
 		ImGui::DragFloat("Speed", &camera->m_speed, 0.0001f, 0.0001f, 0.25f);
 		ImGui::Combo("Type", &render_type, "Diffuse\0Normal\0Iteration\0");
 		if (ImGui::Button("GC")) {
-			auto gc_ns =
-			    ns([&]() { dag_node_pool->SetRoot(dag_node_pool->ThreadedGC(&busy_pool, dag_node_pool->GetRoot())); });
+			auto gc_ns = ns([&]() { set_root(gc()); });
 			printf("GC cost %lf ms\n", (double)gc_ns / 1000000.0);
-			auto flush_ns = ns([&]() {
-				dag_node_pool->Flush(sparse_binder);
-				auto fence = myvk::Fence::Create(device);
-				if (sparse_binder->QueueBind({}, {}, fence) == VK_SUCCESS)
-					fence->Wait();
-			});
+			auto flush_ns = ns([&]() { flush(); });
 			printf("flush cost %lf ms\n", (double)flush_ns / 1000000.0);
 		}
 		ImGui::End();
