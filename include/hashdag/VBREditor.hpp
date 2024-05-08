@@ -45,7 +45,7 @@ template <std::unsigned_integral Word, VBREditor<Word> Editor_T, VBROctree<Word>
 		        ? (coord.level == 0 ? octree_root : p_octree->GetChild(parent_state.octree_node, coord.GetChildIndex()))
 		        : parent_state.octree_node;
 
-		VBRColor fill_color = p_octree->GetFill(state.octree_node), color = fill_color;
+		VBRColor color = p_octree->GetFill(state.octree_node);
 		VBRColorMode color_mode = VBRColorMode::kIfFill;
 		EditType edit_type = editor.EditNode(config, coord, node_ptr, color, color_mode);
 

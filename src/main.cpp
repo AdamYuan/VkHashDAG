@@ -46,10 +46,9 @@ struct AABBEditor {
 	                                  const hashdag::NodeCoord<uint32_t> &coord, hashdag::NodePointer<uint32_t> ptr,
 	                                  hashdag::VBRColor &color, hashdag::VBRColorMode &color_mode) const {
 		auto edit_type = EditNode(config, coord, {});
-		if (edit_type == hashdag::EditType::kFill) {
+		if (edit_type == hashdag::EditType::kFill)
 			color = this->color;
-			color_mode = hashdag::VBRColorMode::kIfFill;
-		} else if (!ptr || color == this->color) {
+		else if (!ptr || color == this->color) {
 			color = this->color;
 			color_mode = hashdag::VBRColorMode::kFinal;
 		}
@@ -108,10 +107,9 @@ template <bool Fill = true> struct SphereEditor {
 	                                  const hashdag::NodeCoord<uint32_t> &coord, hashdag::NodePointer<uint32_t> ptr,
 	                                  hashdag::VBRColor &color, hashdag::VBRColorMode &color_mode) const {
 		auto edit_type = EditNode(config, coord, {});
-		if (edit_type == hashdag::EditType::kFill) {
+		if (edit_type == hashdag::EditType::kFill)
 			color = this->color;
-			color_mode = hashdag::VBRColorMode::kIfFill;
-		} else if (!ptr || color == this->color) {
+		else if (!ptr || color == this->color) {
 			color = this->color;
 			color_mode = hashdag::VBRColorMode::kFinal;
 		}
