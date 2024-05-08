@@ -43,10 +43,12 @@ struct AABBEditor {
 		return hashdag::EditType::kProceed;
 	}
 	inline hashdag::EditType EditNode(const hashdag::Config<uint32_t> &config,
-	                                  const hashdag::NodeCoord<uint32_t> &coord, hashdag::NodePointer<uint32_t>,
+	                                  const hashdag::NodeCoord<uint32_t> &coord, hashdag::NodePointer<uint32_t> ptr,
 	                                  hashdag::VBRColor &color) const {
-		color = this->color;
-		return EditNode(config, coord, {});
+		auto edit_type = EditNode(config, coord, {});
+		if (edit_type != hashdag::EditType::kNotAffected || ptr == hashdag::NodePointer<uint32_t>::Null())
+			color = this->color;
+		return edit_type;
 	}
 	inline bool VoxelInRange(const hashdag::NodeCoord<uint32_t> &coord) const {
 		return glm::all(glm::greaterThanEqual(coord.pos, aabb_min)) && glm::all(glm::lessThan(coord.pos, aabb_max));
@@ -58,7 +60,7 @@ struct AABBEditor {
 	inline bool EditVoxel(const hashdag::Config<uint32_t> &config, const hashdag::NodeCoord<uint32_t> &coord,
 	                      bool voxel, hashdag::VBRColor &color) const {
 		bool in_range = VoxelInRange(coord);
-		color = in_range ? this->color : color;
+		color = in_range || !voxel ? this->color : color;
 		return voxel || in_range;
 	}
 };
@@ -98,10 +100,12 @@ template <bool Fill = true> struct SphereEditor {
 		return min_n2 > r2 ? hashdag::EditType::kNotAffected : hashdag::EditType::kProceed;
 	}
 	inline hashdag::EditType EditNode(const hashdag::Config<uint32_t> &config,
-	                                  const hashdag::NodeCoord<uint32_t> &coord, hashdag::NodePointer<uint32_t>,
+	                                  const hashdag::NodeCoord<uint32_t> &coord, hashdag::NodePointer<uint32_t> ptr,
 	                                  hashdag::VBRColor &color) const {
-		color = this->color;
-		return EditNode(config, coord, {});
+		auto edit_type = EditNode(config, coord, {});
+		if (edit_type != hashdag::EditType::kNotAffected || ptr == hashdag::NodePointer<uint32_t>::Null())
+			color = this->color;
+		return edit_type;
 	}
 	inline bool VoxelInRange(const hashdag::NodeCoord<uint32_t> &coord) const {
 		auto p = coord.pos;
@@ -239,10 +243,10 @@ int main() {
 		    .aabb_max = {10000, 10000, 10000},
 		    .color = hashdag::RGB8Color{0xFF00FF},
 		});
-		edit(SphereEditor<false>{
+		edit(SphereEditor<true>{
 		    .center = {5005, 5000, 5000},
 		    .r2 = 2000 * 2000,
-		    .color = {},
+		    .color = hashdag::RGB8Color{0xFF0000},
 		});
 		edit(SphereEditor<false>{
 		    .center = {10000, 10000, 10000},

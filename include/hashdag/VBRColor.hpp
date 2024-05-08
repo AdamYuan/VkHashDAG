@@ -327,14 +327,15 @@ public:
 		return VBRColor{R5G6B5Color(block.colors), R5G6B5Color(block.colors >> 16u),
 		                (uint8_t)m_chunk.m_weight_bits.Get(GetWeightIndex(), weight_bits), (uint8_t)weight_bits};
 	}
-	inline void Next() {
-		Next([](auto &&) {});
+	inline auto Next() {
+		auto Next([](auto &&) {});
 	}
-	inline void Next(std::invocable<const VBRChunkIterator &> auto &&on_move_one) {
-		on_move_one(*this);
+	inline auto Next(std::invocable<const VBRChunkIterator &> auto &&on_move_one) {
+		auto ret = on_move_one(*this);
 		++m_block_offset;
 		if (!is_last_block() && m_block_offset == get_block_size())
 			next_block();
+		return ret;
 	}
 	inline void Jump(uint32_t count) {
 		Jump(count, [](auto &&, auto &&) {});
@@ -452,9 +453,9 @@ public:
 		return VBRChunk<Word, std::vector>{std::move(m_macro_blocks), std::move(m_block_headers),
 		                                   m_weight_bits.Flush()};
 	}
-	inline void Copy(uint32_t voxel_count) {
+	inline void Copy(uint32_t voxel_count, VBRColor empty_color) {
 		if (m_src_iterator.Empty()) {
-			push({}, voxel_count);
+			push(empty_color, voxel_count);
 			return;
 		}
 		copy(voxel_count);
@@ -464,11 +465,12 @@ public:
 		if (!m_src_iterator.Empty())
 			m_src_iterator.Jump(voxel_count);
 	}
-	inline void Edit(std::invocable<VBRColor &> auto &&editor) {
-		VBRColor color = {};
-		if (!m_src_iterator.Empty())
-			m_src_iterator.Next(
-			    [&](const VBRChunkIterator<Word, Container> &iterator) { color = iterator.GetColor(); });
+	inline void Edit(std::invocable<VBRColor &> auto &&editor, VBRColor empty_color) {
+		VBRColor color = m_src_iterator.Empty()
+		                     ? empty_color
+		                     : m_src_iterator.Next([](const VBRChunkIterator<Word, Container> &iterator) {
+			                       return iterator.GetColor();
+		                       });
 		editor(color);
 		push_one(color);
 	}

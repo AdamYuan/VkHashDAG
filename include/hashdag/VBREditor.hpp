@@ -39,7 +39,8 @@ template <std::unsigned_integral Word, VBREditor<Word> Editor_T, VBROctree<Word>
 		    coord.level <= p_octree->GetLeafLevel()
 		        ? (coord.level == 0 ? octree_root : p_octree->GetChild(parent_state.octree_node, coord.GetChildIndex()))
 		        : parent_state.octree_node;
-		VBRColor color = {}; // p_octree->GetFill(state.octree_node);
+
+		VBRColor color = p_octree->GetFill(state.octree_node);
 		EditType edit_type = editor.EditNode(config, coord, node_ptr, color);
 
 		if (coord.level <= p_octree->GetLeafLevel()) {
@@ -55,7 +56,7 @@ template <std::unsigned_integral Word, VBREditor<Word> Editor_T, VBROctree<Word>
 
 			uint32_t voxel_count = 1u << ((config.GetVoxelLevel() - coord.level) * 3u);
 			if (edit_type == EditType::kNotAffected)
-				p_writer->Copy(voxel_count);
+				p_writer->Copy(voxel_count, color);
 			else if (edit_type != EditType::kProceed)
 				p_writer->Push(color, voxel_count);
 		}
@@ -64,7 +65,8 @@ template <std::unsigned_integral Word, VBREditor<Word> Editor_T, VBROctree<Word>
 	}
 	inline bool EditVoxel(const Config<Word> &config, const NodeCoord<Word> &coord, bool voxel,
 	                      const NodeState &state) const {
-		state.p_writer->Edit([&](VBRColor &color) { voxel = editor.EditVoxel(config, coord, voxel, color); });
+		state.p_writer->Edit([&](VBRColor &color) { voxel = editor.EditVoxel(config, coord, voxel, color); },
+		                     p_octree->GetFill(state.octree_node));
 		return voxel;
 	}
 
