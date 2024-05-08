@@ -10,8 +10,8 @@ namespace tracer_pass {
 struct PC_Data {
 	glm::vec3 pos, look, side, up;
 	uint32_t width, height;
-	uint32_t voxel_levels;
-	uint32_t dag_root, dag_node_level;
+	uint32_t voxel_level;
+	uint32_t dag_root, dag_leaf_level;
 	uint32_t color_root, color_leaf_level;
 	float proj_factor;
 	uint32_t type;
@@ -94,9 +94,9 @@ void TracePass::CmdExecute(const myvk::Ptr<myvk::CommandBuffer> &command_buffer)
 	    .up = look_side_up.up,
 	    .width = extent.width,
 	    .height = extent.height,
-	    .voxel_levels = m_node_pool_ptr->GetConfig().GetVoxelLevel(),
+	    .voxel_level = m_node_pool_ptr->GetConfig().GetVoxelLevel(),
 	    .dag_root = *m_node_pool_ptr->GetRoot(),
-	    .dag_node_level = m_node_pool_ptr->GetConfig().GetNodeLevels(),
+	    .dag_leaf_level = m_node_pool_ptr->GetConfig().GetLeafLevel(),
 	    .color_root = m_color_pool_ptr->GetRoot().pointer,
 	    .color_leaf_level = m_color_pool_ptr->GetLeafLevel(),
 	    .proj_factor = projection_factor,

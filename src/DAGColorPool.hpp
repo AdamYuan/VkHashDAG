@@ -22,7 +22,7 @@ public:
 	template <typename T> using SafeLeafSpan = PagedSpan<SafePagedVector<uint32_t>, T>;
 	struct Pointer {
 		static constexpr uint32_t kDataBits = 30u;
-		enum class Tag { kNull = 0, kColor, kLeaf, kNode };
+		enum class Tag { kNode = 0, kColor, kLeaf, kNull };
 		uint32_t pointer;
 		inline Pointer() : Pointer(Tag::kNull, 0u) {}
 		inline Pointer(Tag tag, uint32_t data) : pointer{(static_cast<uint32_t>(tag) << kDataBits) | data} {}
@@ -138,7 +138,7 @@ public:
 	inline Pointer GetNode(Pointer ptr, auto idx) const {
 		return ptr.GetTag() == Pointer::Tag::kNode
 		           ? m_nodes.Read(ptr.GetData(), [idx](Node node) -> Pointer { return node[idx]; })
-		           : Pointer{};
+		           : (ptr.GetTag() == Pointer::Tag::kColor ? ptr : Pointer{});
 	}
 	inline Pointer SetNode(Pointer ptr, std::span<const Pointer, 8> child_ptrs) {
 		if (ptr.GetTag() != Pointer::Tag::kNode ||

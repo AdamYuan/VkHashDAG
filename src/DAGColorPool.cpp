@@ -11,10 +11,13 @@ myvk::Ptr<DAGColorPool> DAGColorPool::Create(Config config, const std::vector<my
 		return nullptr;
 
 	auto device = queues[0]->GetDevicePtr();
-	auto node_buffer = VkPagedBuffer::Create(
-	    device,
+
+	VkDeviceSize buffer_size_limit =
 	    std::min(device->GetPhysicalDevicePtr()->GetProperties().vk10.limits.sparseAddressSpaceSize,
-	             VkDeviceSize(1u << Pointer::kDataBits) * sizeof(Node)),
+	             (VkDeviceSize)device->GetPhysicalDevicePtr()->GetProperties().vk10.limits.maxStorageBufferRange);
+
+	auto node_buffer = VkPagedBuffer::Create(
+	    device, std::min(buffer_size_limit, VkDeviceSize(1u << Pointer::kDataBits) * sizeof(Node)),
 	    [&](const VkMemoryRequirements &mem_req) {
 		    assert(mem_req.alignment > 0 && std::popcount(mem_req.alignment) == 1);
 		    uint32_t node_bits_per_alignment =
@@ -28,9 +31,7 @@ myvk::Ptr<DAGColorPool> DAGColorPool::Create(Config config, const std::vector<my
 		return nullptr;
 
 	auto leaf_buffer = VkPagedBuffer::Create(
-	    device,
-	    std::min(device->GetPhysicalDevicePtr()->GetProperties().vk10.limits.sparseAddressSpaceSize,
-	             VkDeviceSize(1u << Pointer::kDataBits) * sizeof(uint32_t)),
+	    device, std::min(buffer_size_limit, VkDeviceSize(1u << Pointer::kDataBits) * sizeof(uint32_t)),
 	    [&](const VkMemoryRequirements &mem_req) {
 		    assert(mem_req.alignment > 0 && std::popcount(mem_req.alignment) == 1);
 		    uint32_t word_bits_per_alignment =

@@ -1,5 +1,6 @@
 #version 460
 #extension GL_EXT_control_flow_attributes : enable
+#extension GL_EXT_debug_printf : enable
 
 layout(std430, binding = 0) readonly buffer uuDAGNodes { uint uDAGNodes[]; };
 
@@ -275,19 +276,27 @@ bool DAG_RayMarch(in const uint root,
 	return scale < STACK_SIZE && t_min <= t_max;
 }
 
+vec3 Color_GetLeafColor(in const uint idx) { return vec3(0, 0, 1); }
+
+bool Color_GetNodeColor(in const uint ptr, out vec3 o_rgb) {
+	uint tag = ptr >> 30u, data = ptr & 0x3FFFFFFFu;
+	o_rgb = tag == 1 ? unpackUnorm4x8(data).rgb : (tag == 2 ? Color_GetLeafColor(data + 1) : vec3(0));
+	if (tag == 0)
+		o_rgb = vec3(1, 0, 0);
+	return bool(tag);
+}
+
 vec3 Color_Fetch(in const uint root, in const uint voxel_level, in const uint leaf_level, in const uvec3 vox_pos) {
-	[[unroll]] for (uint ptr = root, l = voxel_level - 1u; l >= leaf_level; --l) {
-		uint tag = ptr >> 30u, data = ptr & 0x3FFFFFFFu;
-		if (tag == 0)
-			return vec3(0);
-		if (tag == 1)
-			return unpackUnorm4x8(data).rgb;
-		if (tag == 2)
-			return vec3(0); // Read VBR Block
-		if (tag == 3)
-			ptr = uColorNodes[data][0];
+	uint ptr = root;
+	vec3 rgb = vec3(0);
+	[[unroll]] for (uint l = 0; l < leaf_level; ++l) {
+		if (Color_GetNodeColor(ptr, rgb))
+			return rgb;
+		uvec3 o = (vox_pos >> (voxel_level - 1u - l)) & 1u;
+		ptr = uColorNodes[ptr].child[o.x | (o.y << 1u) | (o.z << 2u)];
 	}
-	return vec3(0);
+	Color_GetNodeColor(ptr, rgb);
+	return rgb;
 }
 
 vec3 Camera_GenRay() {
@@ -308,10 +317,10 @@ void main() {
 	bool hit = DAG_RayMarch(uDAGRoot, uDAGLeafLevel, uProjectionFactor, o, d, hit_pos, norm, vox_pos, vox_size, vox_min,
 	                        vox_max, iter);
 
-	if (uType == 0)
-		// oColor = vec4(hit ? vec3(max(dot(norm, normalize(vec3(4, 5, 3))), 0.0) * .5 + .5) : vec3(0), 1.0);
-		oColor = vec4(hit ? vec3(vox_pos) / vec3(10000.0) : vec3(0), 1.0);
-	else if (uType == 1)
+	if (uType == 0) {
+		float diffuse = max(dot(norm, normalize(vec3(4, 5, 3))), 0.0) * .5 + .5;
+		oColor = vec4(hit ? diffuse * Color_Fetch(uColorRoot, uVoxelLevel, uColorLeafLevel, vox_pos) : vec3(0), 1.0);
+	} else if (uType == 1)
 		oColor = hit ? vec4(norm * .5 + .5, 1.0) : vec4(0, 0, 0, 1);
 	else
 		oColor = vec4(Heat(float(iter) / 128.0), 1.0);

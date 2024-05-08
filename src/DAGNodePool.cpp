@@ -11,9 +11,18 @@ myvk::Ptr<DAGNodePool> DAGNodePool::Create(hashdag::Config<uint32_t> config,
 	if (queues.empty())
 		return nullptr;
 
+	VkDeviceSize buffer_size = (VkDeviceSize)config.GetTotalWords() * sizeof(uint32_t);
+
 	auto device = queues[0]->GetDevicePtr();
+	VkDeviceSize buffer_size_limit =
+	    std::min(device->GetPhysicalDevicePtr()->GetProperties().vk10.limits.sparseAddressSpaceSize,
+	             (VkDeviceSize)device->GetPhysicalDevicePtr()->GetProperties().vk10.limits.maxStorageBufferRange);
+
+	if (buffer_size > buffer_size_limit)
+		return nullptr;
+
 	auto buffer = VkPagedBuffer::Create(
-	    device, (VkDeviceSize)config.GetTotalWords() * sizeof(uint32_t),
+	    device, buffer_size,
 	    [&](const VkMemoryRequirements &mem_req) -> VkDeviceSize {
 		    assert(std::popcount(mem_req.alignment) == 1);
 

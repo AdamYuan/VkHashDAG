@@ -221,12 +221,12 @@ int main() {
 		edit(AABBEditor{
 		    .aabb_min = {0, 0, 0},
 		    .aabb_max = {5000, 5000, 5000},
-		    .color = hashdag::RGB8Color{0xFF0000},
+		    .color = hashdag::RGB8Color{0x00FFFF},
 		});
 		edit(AABBEditor{
 		    .aabb_min = {1001, 1000, 1000},
 		    .aabb_max = {10000, 10000, 10000},
-		    .color = hashdag::RGB8Color{0xFF0000},
+		    .color = hashdag::RGB8Color{0xFF00FF},
 		});
 		edit(SphereEditor<false>{
 		    .center = {5005, 5000, 5000},
@@ -279,11 +279,6 @@ int main() {
 	camera->m_speed = 0.01f;
 
 	myvk::ImGuiInit(window, myvk::CommandPool::Create(generic_queue));
-
-	auto framebuffer = myvk::ImagelessFramebuffer::Create(render_pass, {frame_manager->GetSwapchainImageViews()[0]});
-	frame_manager->SetResizeFunc([&framebuffer, &render_pass, &frame_manager](const VkExtent2D &) {
-		framebuffer = myvk::ImagelessFramebuffer::Create(render_pass, {frame_manager->GetSwapchainImageViews()[0]});
-	});
 
 	std::array<myvk::Ptr<rg::DAGRenderGraph>, kFrameCount> render_graphs;
 	for (auto &rg : render_graphs)
