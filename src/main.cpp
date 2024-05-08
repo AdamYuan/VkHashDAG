@@ -13,6 +13,7 @@
 #include "rg/DAGRenderGraph.hpp"
 
 #include <ThreadPool.h>
+#include <glm/gtc/type_ptr.hpp>
 #include <libfork/schedule/busy_pool.hpp>
 
 constexpr uint32_t kFrameCount = 3;
@@ -119,6 +120,10 @@ template <EditMode Mode = EditMode::kFill> struct SphereEditor {
 			color = this->color;
 			color_mode = hashdag::VBRColorMode::kFinal;
 		}
+		if constexpr (Mode == EditMode::kPaint) {
+			if (!ptr)
+				edit_type = hashdag::EditType::kNotAffected;
+		}
 		return edit_type;
 	}
 	inline bool VoxelInRange(const hashdag::NodeCoord<uint32_t> &coord) const {
@@ -146,26 +151,6 @@ template <EditMode Mode = EditMode::kFill> struct SphereEditor {
 	}
 };
 
-/* struct AABBIterator {
-    uint32_t level;
-    hashdag::Vec3<uint32_t> aabb_min, aabb_max;
-
-    std::atomic_uint64_t count = 0;
-
-    inline hashdag::IterateType IterateNode(const hashdag::NodeCoord<uint32_t> &coord,
-                                            hashdag::NodePointer<uint32_t> node) const {
-        auto lb = coord.GetLowerBoundAtLevel(level), ub = coord.GetUpperBoundAtLevel(level);
-        if (!node || ub.Any(std::less_equal<uint32_t>{}, aabb_min) || lb.Any(std::greater_equal<uint32_t>{}, aabb_max))
-            return hashdag::IterateType::kStop;
-        return hashdag::IterateType::kProceed;
-    }
-    inline void IterateVoxel(const hashdag::NodeCoord<uint32_t> &coord, bool voxel) {
-        if (voxel && coord.pos.All(std::greater_equal<uint32_t>{}, aabb_min) &&
-            coord.pos.All(std::less<uint32_t>{}, aabb_max))
-            count.fetch_add(1, std::memory_order_relaxed);
-    }
-}; */
-
 template <typename Func> inline long ns(Func &&func) {
 	auto begin = std::chrono::high_resolution_clock::now();
 	func();
@@ -185,6 +170,8 @@ std::future<EditResult> edit_future;
 
 float edit_radius = 128.0f;
 int render_type = 0;
+bool paint = false;
+glm::vec3 color = {1.f, 0.0f, 0.0f};
 
 int main() {
 	GLFWwindow *window = myvk::GLFWCreateWindow("Test", 1280, 720, true);
@@ -277,7 +264,7 @@ int main() {
 			set_root(vbr_edit(SphereEditor<EditMode::kPaint>{
 			    .center = {5005, 5000, 5000},
 			    .r2 = 2000 * 2000,
-			    .color = hashdag::RGB8Color{0x0000FF},
+			    .color = hashdag::RGB8Color{0xFFFFFF},
 			}));
 			set_root(stateless_edit(SphereEditor<EditMode::kDig>{
 			    .center = {10000, 10000, 10000},
@@ -342,11 +329,18 @@ int main() {
 					                              .r2 = r2,
 					                          });
 				} else if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
-					push_edit(vbr_edit, SphereEditor<EditMode::kPaint>{
-					                        .center = up,
-					                        .r2 = r2,
-					                        .color = hashdag::VBRColor{0x00FF00},
-					                    });
+					if (paint)
+						push_edit(vbr_edit, SphereEditor<EditMode::kPaint>{
+						                        .center = up,
+						                        .r2 = r2,
+						                        .color = hashdag::VBRColor{color},
+						                    });
+					else
+						push_edit(vbr_edit, SphereEditor<EditMode::kFill>{
+						                        .center = up,
+						                        .r2 = r2,
+						                        .color = hashdag::VBRColor{color},
+						                    });
 				}
 			}
 		}
@@ -357,6 +351,8 @@ int main() {
 		ImGui::DragFloat("Radius", &edit_radius, 1.0f, 0.0f, 2048.0f);
 		ImGui::DragFloat("Speed", &camera->m_speed, 0.0001f, 0.0001f, 0.25f);
 		ImGui::Combo("Type", &render_type, "Diffuse\0Normal\0Iteration\0");
+		ImGui::ColorEdit3("Color", glm::value_ptr(color));
+		ImGui::Checkbox("Paint", &paint);
 		if (ImGui::Button("GC")) {
 			auto gc_ns = ns([&]() { set_root(gc()); });
 			printf("GC cost %lf ms\n", (double)gc_ns / 1000000.0);

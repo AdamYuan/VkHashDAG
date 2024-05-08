@@ -91,8 +91,6 @@ template <std::unsigned_integral Word, VBREditor<Word> Editor_T, VBROctree<Word>
 	                     std::span<const NodeState, 8> child_states) const {
 		if (coord.level == p_octree->GetLeafLevel()) {
 			if (state.p_writer) {
-				if (state.p_writer->GetVoxelCount() != (1u << 21u))
-					printf("%u\n", state.p_writer->GetVoxelCount());
 				state.octree_node = p_octree->SetLeaf(state.octree_node, state.p_writer->Flush());
 				delete state.p_writer;
 			}
