@@ -125,7 +125,7 @@ template <bool Fill = true> struct SphereEditor {
 	                      bool voxel, hashdag::VBRColor &color) const {
 		bool in_range = VoxelInRange(coord);
 		if constexpr (Fill) {
-			color = in_range ? this->color : color;
+			color = in_range || !voxel ? this->color : color;
 			return voxel || in_range;
 		} else
 			return voxel && !in_range;
@@ -205,7 +205,7 @@ int main() {
 	        .leaf_level = 10,
 	        .node_bits_per_node_page = 18,
 	        .word_bits_per_leaf_page = 24,
-	        .keep_history = true,
+	        .keep_history = false,
 	    },
 	    {generic_queue, sparse_queue});
 	auto sparse_binder = myvk::MakePtr<VkSparseBinder>(sparse_queue);
