@@ -35,13 +35,14 @@ template <std::unsigned_integral Word, VBREditor<Word> Editor_T, VBROctree<Word>
 
 	inline EditType EditNode(const Config<Word> &config, const NodeCoord<Word> &coord, NodePointer<Word> node_ptr,
 	                         NodeState &state, const NodeState &parent_state) const {
-		VBRColor color{};
+		state.octree_node =
+		    coord.level <= p_octree->GetLeafLevel()
+		        ? (coord.level == 0 ? octree_root : p_octree->GetChild(parent_state.octree_node, coord.GetChildIndex()))
+		        : parent_state.octree_node;
+		VBRColor color = {}; // p_octree->GetFill(state.octree_node);
 		EditType edit_type = editor.EditNode(config, coord, node_ptr, color);
 
 		if (coord.level <= p_octree->GetLeafLevel()) {
-			state.octree_node =
-			    coord.level == 0 ? octree_root : p_octree->GetNode(parent_state.octree_node, coord.GetChildIndex());
-
 			if (edit_type == EditType::kFill)
 				state.octree_node = p_octree->FillNode(state.octree_node, color);
 			else if (edit_type == EditType::kClear)

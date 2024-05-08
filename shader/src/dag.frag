@@ -1,6 +1,6 @@
 #version 460
 #extension GL_EXT_control_flow_attributes : enable
-#extension GL_EXT_debug_printf : enable
+#extension GL_EXT_buffer_reference2 : enable
 
 layout(std430, binding = 0) readonly buffer uuDAGNodes { uint uDAGNodes[]; };
 
@@ -276,7 +276,62 @@ bool DAG_RayMarch(in const uint root,
 	return scale < STACK_SIZE && t_min <= t_max;
 }
 
-vec3 Color_GetLeafColor(in const uint idx) { return vec3(0, 0, 1); }
+uint Color_Morton32(uvec3 u) {
+	u = (u | (u << 16u)) & 0x030000FFu;
+	u = (u | (u << 8u)) & 0x0300F00Fu;
+	u = (u | (u << 4u)) & 0x030C30C3u;
+	u = (u | (u << 2u)) & 0x09249249u;
+	return u.x | (u.y << 1u) | (u.z << 2u);
+}
+
+uvec2 Color_GetU2(in const uint ofst, in const uint idx) {
+	// ofst is guarenteed to be a multiple of 2
+	uint p = ofst + (idx << 1u);
+	return uvec2(uColorLeaves[p], uColorLeaves[p | 1u]);
+}
+uint Color_GetU2_x(in const uint ofst, in const uint idx) { return uColorLeaves[ofst + (idx << 1u)]; }
+uint Color_GetU2_y(in const uint ofst, in const uint idx) { return uColorLeaves[(ofst + (idx << 1u)) | 1u]; }
+
+vec3 Color_GetLeafColor(in const uint idx, in const uvec3 vox_pos) {
+	uint macro_cnt = uColorLeaves[idx + 1u], block_cnt = uColorLeaves[idx + 2u];
+	uint macro_offset = idx + 4u;
+	uint block_offset = macro_offset + (macro_cnt << 1u);
+	uint weight_offset = block_offset + (block_cnt << 1u);
+
+	uint vox_id = Color_Morton32(vox_pos);
+	uint macro_id = vox_id >> 14u;
+	uvec2 macro = Color_GetU2(macro_offset, macro_id);
+
+	// Refine Block Range and Vox ID
+	block_offset += macro.x << 1u;
+	block_cnt = macro_id + 1u < macro_cnt ? Color_GetU2_x(macro_offset, macro_id + 1u) - macro.x : block_cnt - macro.x;
+	vox_id &= 0x3FFFu;
+
+	// Binary Search for Block, Find the first block with vox_idx_offset > vox_id
+	[[unroll]] for (uint _ = 0; _ <= 14u && block_cnt > 0; ++_) {
+		uint step = block_cnt >> 1u;
+		if ((Color_GetU2_y(block_offset, step) >> 18u) <= vox_id) {
+			block_cnt -= (step + 1u);
+			block_offset += (step + 1u) << 1u;
+		} else
+			block_cnt = step;
+	}
+	block_offset -= 2u;
+
+	// Read Color
+	uvec2 block = Color_GetU2(block_offset, 0);
+	uint bits_per_weight = (block.y >> 16u) & 0x3u;
+	if (bits_per_weight == 0u)
+		return unpackUnorm4x8(block.x).rgb;
+
+	// In-block Vox ID & Global Bit ID
+	vox_id -= (block.y >> 18u);
+	uint bit_id = macro.y + (block.y & 0xFFFFu) + vox_id * bits_per_weight;
+	
+	// TODO: Read Weight Bits and Decode VBR Color
+
+	return vec3(0);
+}
 
 vec3 Color_Fetch(in const uint root, in const uint voxel_level, in const uint leaf_level, in const uvec3 vox_pos) {
 	uint ptr = root;
@@ -289,7 +344,8 @@ vec3 Color_Fetch(in const uint root, in const uint voxel_level, in const uint le
 		ptr = uColorNodes[ptr].child[o.x | (o.y << 1u) | (o.z << 2u)];
 	}
 	uint tag = ptr >> 30u, data = ptr & 0x3FFFFFFFu;
-	return tag == 2u ? Color_GetLeafColor(data) : unpackUnorm4x8(data).rgb;
+	return tag == 2u ? Color_GetLeafColor(data, vox_pos & ((1u << (voxel_level - leaf_level)) - 1u))
+	                 : unpackUnorm4x8(data).rgb;
 }
 
 vec3 Camera_GenRay() {

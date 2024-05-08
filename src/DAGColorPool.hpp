@@ -135,10 +135,13 @@ public:
 
 	inline const Config &GetConfig() const { return m_config; }
 
-	inline Pointer GetNode(Pointer ptr, auto idx) const {
+	inline Pointer GetChild(Pointer ptr, auto idx) const {
 		return ptr.GetTag() == Pointer::Tag::kNode
 		           ? m_nodes.Read(ptr.GetData(), [idx](Node node) -> Pointer { return node[idx]; })
 		           : (ptr.GetTag() == Pointer::Tag::kColor ? ptr : Pointer{});
+	}
+	static inline hashdag::VBRColor GetFill(Pointer ptr) {
+		return ptr.GetTag() == Pointer::Tag::kColor ? hashdag::VBRColor{ptr.GetData()} : hashdag::VBRColor{};
 	}
 	inline Pointer SetNode(Pointer ptr, std::span<const Pointer, 8> child_ptrs) {
 		// Null
@@ -181,8 +184,8 @@ public:
 				mark_leaf(idx + 1, data_size - 1); // not mark the first "block size" indicator
 				write_leaf_chunk(idx + 1, chunk);
 				return ptr;
-			} else
-				append_size = std::max(block_size << 1, append_size); // Double the space
+			}
+			append_size = std::max(block_size << 1, append_size); // Double the space
 		}
 
 		assert(data_size <= append_size && append_size % kVBRStructWords == 0);

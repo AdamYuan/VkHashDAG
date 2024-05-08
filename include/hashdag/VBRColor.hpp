@@ -454,7 +454,7 @@ public:
 	}
 	inline void Copy(uint32_t voxel_count) {
 		if (m_src_iterator.Empty()) {
-			push(VBRColor{}, voxel_count);
+			push({}, voxel_count);
 			return;
 		}
 		copy(voxel_count);

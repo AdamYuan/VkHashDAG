@@ -48,15 +48,18 @@ struct AABBEditor {
 		color = this->color;
 		return EditNode(config, coord, {});
 	}
+	inline bool VoxelInRange(const hashdag::NodeCoord<uint32_t> &coord) const {
+		return glm::all(glm::greaterThanEqual(coord.pos, aabb_min)) && glm::all(glm::lessThan(coord.pos, aabb_max));
+	}
 	inline bool EditVoxel(const hashdag::Config<uint32_t> &config, const hashdag::NodeCoord<uint32_t> &coord,
 	                      bool voxel) const {
-		return voxel ||
-		       glm::all(glm::greaterThanEqual(coord.pos, aabb_min)) && glm::all(glm::lessThan(coord.pos, aabb_max));
+		return voxel || VoxelInRange(coord);
 	}
 	inline bool EditVoxel(const hashdag::Config<uint32_t> &config, const hashdag::NodeCoord<uint32_t> &coord,
 	                      bool voxel, hashdag::VBRColor &color) const {
-		color = this->color;
-		return EditVoxel(config, coord, voxel);
+		bool in_range = VoxelInRange(coord);
+		color = in_range ? this->color : color;
+		return voxel || in_range;
 	}
 };
 
@@ -100,20 +103,28 @@ template <bool Fill = true> struct SphereEditor {
 		color = this->color;
 		return EditNode(config, coord, {});
 	}
-	inline bool EditVoxel(const hashdag::Config<uint32_t> &config, const hashdag::NodeCoord<uint32_t> &coord,
-	                      bool voxel) const {
+	inline bool VoxelInRange(const hashdag::NodeCoord<uint32_t> &coord) const {
 		auto p = coord.pos;
 		glm::i64vec3 p_dist = glm::i64vec3{p.x, p.y, p.z} - glm::i64vec3(center);
 		uint64_t p_n2 = p_dist.x * p_dist.x + p_dist.y * p_dist.y + p_dist.z * p_dist.z;
+		return p_n2 <= r2;
+	}
+	inline bool EditVoxel(const hashdag::Config<uint32_t> &config, const hashdag::NodeCoord<uint32_t> &coord,
+	                      bool voxel) const {
+		bool in_range = VoxelInRange(coord);
 		if constexpr (Fill)
-			return voxel || p_n2 <= r2;
+			return voxel || in_range;
 		else
-			return voxel && p_n2 > r2;
+			return voxel && !in_range;
 	}
 	inline bool EditVoxel(const hashdag::Config<uint32_t> &config, const hashdag::NodeCoord<uint32_t> &coord,
 	                      bool voxel, hashdag::VBRColor &color) const {
-		color = this->color;
-		return EditVoxel(config, coord, voxel);
+		bool in_range = VoxelInRange(coord);
+		if constexpr (Fill) {
+			color = in_range ? this->color : color;
+			return voxel || in_range;
+		} else
+			return voxel && !in_range;
 	}
 };
 
