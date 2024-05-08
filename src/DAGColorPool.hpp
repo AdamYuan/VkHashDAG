@@ -191,7 +191,8 @@ public:
 		assert(data_size <= append_size && append_size % kVBRStructWords == 0);
 
 		// Append
-		auto opt_idx = m_leaves.Append(append_size, [](auto &&, auto &&, auto &&, auto &&) {});
+		auto opt_idx = m_leaves.Append(append_size, [](auto &&...) {});
+		// TODO: Test out-of-memory
 		if (!opt_idx)
 			return ptr;
 		std::size_t idx = *opt_idx;

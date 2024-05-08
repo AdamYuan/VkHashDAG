@@ -69,7 +69,8 @@ struct AABBEditor {
 	}
 };
 
-template <bool Fill = true> struct SphereEditor {
+enum class EditMode { kFill, kDig, kPaint };
+template <EditMode Mode = EditMode::kFill> struct SphereEditor {
 	glm::u32vec3 center;
 	uint64_t r2;
 	hashdag::VBRColor color;
@@ -85,7 +86,7 @@ template <bool Fill = true> struct SphereEditor {
 		glm::u64vec3 max_dist_2 = glm::max(lb_dist_2, ub_dist_2);
 		uint64_t max_n2 = max_dist_2.x + max_dist_2.y + max_dist_2.z;
 		if (max_n2 <= r2)
-			return Fill ? hashdag::EditType::kFill : hashdag::EditType::kClear;
+			return Mode == EditMode::kDig ? hashdag::EditType::kClear : hashdag::EditType::kFill;
 
 		uint64_t min_n2 = 0;
 		if (lb_dist.x > 0)
@@ -106,10 +107,15 @@ template <bool Fill = true> struct SphereEditor {
 	inline hashdag::EditType EditNode(const hashdag::Config<uint32_t> &config,
 	                                  const hashdag::NodeCoord<uint32_t> &coord, hashdag::NodePointer<uint32_t> ptr,
 	                                  hashdag::VBRColor &color, hashdag::VBRColorMode &color_mode) const {
+		static_assert(Mode != EditMode::kDig);
 		auto edit_type = EditNode(config, coord, {});
-		if (edit_type == hashdag::EditType::kFill)
+		if (edit_type == hashdag::EditType::kFill) {
 			color = this->color;
-		else if (!ptr || color == this->color) {
+			if constexpr (Mode == EditMode::kPaint) {
+				edit_type = hashdag::EditType::kNotAffected;
+				color_mode = hashdag::VBRColorMode::kFinal;
+			}
+		} else if (!ptr || color == this->color) {
 			color = this->color;
 			color_mode = hashdag::VBRColorMode::kFinal;
 		}
@@ -123,20 +129,20 @@ template <bool Fill = true> struct SphereEditor {
 	}
 	inline bool EditVoxel(const hashdag::Config<uint32_t> &config, const hashdag::NodeCoord<uint32_t> &coord,
 	                      bool voxel) const {
+		if constexpr (Mode == EditMode::kPaint)
+			return voxel;
 		bool in_range = VoxelInRange(coord);
-		if constexpr (Fill)
+		if constexpr (Mode == EditMode::kFill)
 			return voxel || in_range;
 		else
 			return voxel && !in_range;
 	}
 	inline bool EditVoxel(const hashdag::Config<uint32_t> &config, const hashdag::NodeCoord<uint32_t> &coord,
 	                      bool voxel, hashdag::VBRColor &color) const {
+		static_assert(Mode != EditMode::kDig);
 		bool in_range = VoxelInRange(coord);
-		if constexpr (Fill) {
-			color = in_range || !voxel ? this->color : color;
-			return voxel || in_range;
-		} else
-			return voxel && !in_range;
+		color = in_range || !voxel ? this->color : color;
+		return Mode == EditMode::kFill ? voxel || in_range : voxel;
 	}
 };
 
@@ -268,12 +274,12 @@ int main() {
 			    .aabb_max = {5000, 5000, 5000},
 			    .color = hashdag::RGB8Color{0x00FFFF},
 			}));
-			set_root(vbr_edit(SphereEditor<true>{
+			set_root(vbr_edit(SphereEditor<EditMode::kPaint>{
 			    .center = {5005, 5000, 5000},
 			    .r2 = 2000 * 2000,
 			    .color = hashdag::RGB8Color{0x0000FF},
 			}));
-			set_root(stateless_edit(SphereEditor<false>{
+			set_root(stateless_edit(SphereEditor<EditMode::kDig>{
 			    .center = {10000, 10000, 10000},
 			    .r2 = 4000 * 4000,
 			    .color = {},
@@ -331,12 +337,12 @@ int main() {
 				auto r2 = uint64_t(edit_radius * edit_radius);
 
 				if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
-					push_edit(stateless_edit, SphereEditor<false>{
+					push_edit(stateless_edit, SphereEditor<EditMode::kDig>{
 					                              .center = up,
 					                              .r2 = r2,
 					                          });
 				} else if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
-					push_edit(vbr_edit, SphereEditor{
+					push_edit(vbr_edit, SphereEditor<EditMode::kPaint>{
 					                        .center = up,
 					                        .r2 = r2,
 					                        .color = hashdag::VBRColor{0x00FF00},

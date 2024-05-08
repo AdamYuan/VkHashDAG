@@ -21,7 +21,6 @@ concept VBREditor = requires(const T ce) {
 		ce.EditNode(Config<Word>{}, NodeCoord<Word>{}, NodePointer<Word>{}, std::declval<VBRColor &>(),
 		            std::declval<VBRColorMode &>())
 	} -> std::convertible_to<EditType>;
-	{ ce.EditVoxel(Config<Word>{}, NodeCoord<Word>{}, bool{}) } -> std::convertible_to<bool>;
 	{
 		ce.EditVoxel(Config<Word>{}, NodeCoord<Word>{}, bool{}, std::declval<VBRColor &>())
 	} -> std::convertible_to<bool>;
@@ -29,8 +28,9 @@ concept VBREditor = requires(const T ce) {
 
 template <std::unsigned_integral Word, VBREditor<Word> Editor_T, VBROctree<Word> Octree_T> struct VBREditorWrapper {
 	struct NodeState {
-		VBROctreePointer<Octree_T> octree_node;
-		VBROctreeLeafWriter<Octree_T> *p_writer;
+		VBROctreeLeafWriter<Octree_T> *p_writer{nullptr};
+		VBROctreePointer<Octree_T> octree_node{};
+		bool is_final{false};
 	};
 
 	Editor_T editor;
@@ -39,33 +39,39 @@ template <std::unsigned_integral Word, VBREditor<Word> Editor_T, VBROctree<Word>
 
 	inline EditType EditNode(const Config<Word> &config, const NodeCoord<Word> &coord, NodePointer<Word> node_ptr,
 	                         NodeState &state, const NodeState &parent_state) const {
-		state.p_writer = nullptr;
 		state.octree_node =
 		    coord.level <= p_octree->GetLeafLevel()
 		        ? (coord.level == 0 ? octree_root : p_octree->GetChild(parent_state.octree_node, coord.GetChildIndex()))
 		        : parent_state.octree_node;
+		state.p_writer = parent_state.p_writer;
+		state.is_final = parent_state.is_final;
 
 		VBRColor color = p_octree->GetFill(state.octree_node);
 		VBRColorMode color_mode = VBRColorMode::kIfFill;
 		EditType edit_type = editor.EditNode(config, coord, node_ptr, color, color_mode);
 
-		if (coord.level <= p_octree->GetLeafLevel()) {
-			// If Fill or is able to set Final color
-			if (edit_type == EditType::kFill || color_mode == VBRColorMode::kFinal)
-				state.octree_node = p_octree->FillNode(state.octree_node, color);
-			else if (edit_type == EditType::kClear)
-				state.octree_node = p_octree->ClearNode(state.octree_node);
-			else if (edit_type == EditType::kProceed && coord.level == p_octree->GetLeafLevel())
-				state.p_writer = new VBROctreeLeafWriter<Octree_T>(p_octree->GetLeaf(state.octree_node));
-		} else {
-			auto p_writer = parent_state.p_writer;
-			state.p_writer = p_writer;
-			if (p_writer) {
-				uint32_t voxel_count = 1u << ((config.GetVoxelLevel() - coord.level) * 3u);
-				if (edit_type == EditType::kNotAffected)
-					p_writer->Copy(voxel_count, color);
-				else if (edit_type != EditType::kProceed)
-					p_writer->Push(color, voxel_count);
+		if (!state.is_final) {
+			if (coord.level <= p_octree->GetLeafLevel()) {
+				if (color_mode == VBRColorMode::kFinal) {
+					state.octree_node = p_octree->FillNode(state.octree_node, color);
+					state.is_final = true;
+				} else if (edit_type == EditType::kFill)
+					state.octree_node = p_octree->FillNode(state.octree_node, color);
+				else if (edit_type == EditType::kClear)
+					state.octree_node = p_octree->ClearNode(state.octree_node);
+				else if (edit_type == EditType::kProceed && coord.level == p_octree->GetLeafLevel())
+					state.p_writer = new VBROctreeLeafWriter<Octree_T>(p_octree->GetLeaf(state.octree_node));
+			} else {
+				if (state.p_writer) {
+					uint32_t voxel_count = 1u << ((config.GetVoxelLevel() - coord.level) * 3u);
+					if (color_mode == VBRColorMode::kFinal) {
+						state.p_writer->Push(color, voxel_count);
+						state.is_final = true;
+					} else if (edit_type == EditType::kNotAffected)
+						state.p_writer->Copy(voxel_count, color);
+					else if (edit_type != EditType::kProceed)
+						state.p_writer->Push(color, voxel_count);
+				}
 			}
 		}
 
@@ -73,17 +79,20 @@ template <std::unsigned_integral Word, VBREditor<Word> Editor_T, VBROctree<Word>
 	}
 	inline bool EditVoxel(const Config<Word> &config, const NodeCoord<Word> &coord, bool voxel,
 	                      const NodeState &state) const {
-		if (state.p_writer)
-			return state.p_writer->Edit([&](VBRColor &color) { return editor.EditVoxel(config, coord, voxel, color); },
-			                            p_octree->GetFill(state.octree_node));
-		else
-			return editor.EditVoxel(config, coord, voxel);
+		if (state.is_final) {
+			VBRColor color{};
+			return editor.EditVoxel(config, coord, voxel, color);
+		}
+		return state.p_writer->Edit([&](VBRColor &color) { return editor.EditVoxel(config, coord, voxel, color); },
+		                            p_octree->GetFill(state.octree_node));
 	}
 
 	inline void JoinNode(const Config<Word> &, const NodeCoord<Word> &coord, NodeState &state,
 	                     std::span<const NodeState, 8> child_states) const {
 		if (coord.level == p_octree->GetLeafLevel()) {
 			if (state.p_writer) {
+				if (state.p_writer->GetVoxelCount() != (1u << 21u))
+					printf("%u\n", state.p_writer->GetVoxelCount());
 				state.octree_node = p_octree->SetLeaf(state.octree_node, state.p_writer->Flush());
 				delete state.p_writer;
 			}

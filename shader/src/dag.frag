@@ -1,13 +1,9 @@
 #version 460
 #extension GL_EXT_control_flow_attributes : enable
-#extension GL_EXT_buffer_reference2 : enable
 
 layout(std430, binding = 0) readonly buffer uuDAGNodes { uint uDAGNodes[]; };
 
-struct ColorNode {
-	uint child[8];
-};
-layout(std430, binding = 1) readonly buffer uuColorNodes { ColorNode uColorNodes[]; };
+layout(std430, binding = 1) readonly buffer uuColorNodes { uint uColorNodes[]; };
 layout(std430, binding = 2) readonly buffer uuColorLeaves { uint uColorLeaves[]; };
 
 layout(location = 0) out vec4 oColor;
@@ -327,7 +323,7 @@ vec3 Color_GetLeafColor(in const uint idx, in const uvec3 vox_pos) {
 	// In-block Vox ID & Global Bit ID
 	vox_id -= (block.y >> 18u);
 	uint bit_id = macro.y + (block.y & 0xFFFFu) + vox_id * bits_per_weight;
-	
+
 	// TODO: Read Weight Bits and Decode VBR Color
 
 	return vec3(0);
@@ -341,7 +337,7 @@ vec3 Color_Fetch(in const uint root, in const uint voxel_level, in const uint le
 		if (tag != 0)
 			return unpackUnorm4x8(data).rgb;
 		uvec3 o = (vox_pos >> (voxel_level - 1u - l)) & 1u;
-		ptr = uColorNodes[ptr].child[o.x | (o.y << 1u) | (o.z << 2u)];
+		ptr = uColorNodes[(ptr << 3u) | o.x | (o.y << 1u) | (o.z << 2u)];
 	}
 	uint tag = ptr >> 30u, data = ptr & 0x3FFFFFFFu;
 	return tag == 2u ? Color_GetLeafColor(data, vox_pos & ((1u << (voxel_level - leaf_level)) - 1u))
