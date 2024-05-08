@@ -44,10 +44,15 @@ struct AABBEditor {
 	}
 	inline hashdag::EditType EditNode(const hashdag::Config<uint32_t> &config,
 	                                  const hashdag::NodeCoord<uint32_t> &coord, hashdag::NodePointer<uint32_t> ptr,
-	                                  hashdag::VBRColor &color) const {
+	                                  hashdag::VBRColor &color, hashdag::VBRColorMode &color_mode) const {
 		auto edit_type = EditNode(config, coord, {});
-		if (edit_type != hashdag::EditType::kNotAffected || ptr == hashdag::NodePointer<uint32_t>::Null())
+		if (edit_type == hashdag::EditType::kFill) {
 			color = this->color;
+			color_mode = hashdag::VBRColorMode::kIfFill;
+		} else if (!ptr || color == this->color) {
+			color = this->color;
+			color_mode = hashdag::VBRColorMode::kFinal;
+		}
 		return edit_type;
 	}
 	inline bool VoxelInRange(const hashdag::NodeCoord<uint32_t> &coord) const {
@@ -101,10 +106,15 @@ template <bool Fill = true> struct SphereEditor {
 	}
 	inline hashdag::EditType EditNode(const hashdag::Config<uint32_t> &config,
 	                                  const hashdag::NodeCoord<uint32_t> &coord, hashdag::NodePointer<uint32_t> ptr,
-	                                  hashdag::VBRColor &color) const {
+	                                  hashdag::VBRColor &color, hashdag::VBRColorMode &color_mode) const {
 		auto edit_type = EditNode(config, coord, {});
-		if (edit_type != hashdag::EditType::kNotAffected || ptr == hashdag::NodePointer<uint32_t>::Null())
+		if (edit_type == hashdag::EditType::kFill) {
 			color = this->color;
+			color_mode = hashdag::VBRColorMode::kIfFill;
+		} else if (!ptr || color == this->color) {
+			color = this->color;
+			color_mode = hashdag::VBRColorMode::kFinal;
+		}
 		return edit_type;
 	}
 	inline bool VoxelInRange(const hashdag::NodeCoord<uint32_t> &coord) const {

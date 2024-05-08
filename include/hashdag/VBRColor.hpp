@@ -36,6 +36,7 @@ public:
 	inline uint32_t GetColors() const { return m_colors; }
 	inline uint8_t GetWeight() const { return m_weight; }
 	inline uint8_t GetBitsPerWeight() const { return m_bits_per_weight; }
+	inline bool operator==(const VBRColor &) const = default;
 };
 
 struct VBRInfo {
@@ -465,14 +466,15 @@ public:
 		if (!m_src_iterator.Empty())
 			m_src_iterator.Jump(voxel_count);
 	}
-	inline void Edit(std::invocable<VBRColor &> auto &&editor, VBRColor empty_color) {
+	inline auto Edit(std::invocable<VBRColor &> auto &&editor, VBRColor empty_color) {
 		VBRColor color = m_src_iterator.Empty()
 		                     ? empty_color
 		                     : m_src_iterator.Next([](const VBRChunkIterator<Word, Container> &iterator) {
 			                       return iterator.GetColor();
 		                       });
-		editor(color);
+		auto ret = editor(color);
 		push_one(color);
+		return ret;
 	}
 };
 
