@@ -141,12 +141,20 @@ public:
 		           : (ptr.GetTag() == Pointer::Tag::kColor ? ptr : Pointer{});
 	}
 	inline Pointer SetNode(Pointer ptr, std::span<const Pointer, 8> child_ptrs) {
-		if (ptr.GetTag() != Pointer::Tag::kNode ||
-		    !std::ranges::equal(m_nodes.Read(ptr.GetData(), [](Node node) { return node; }), child_ptrs)) {
-			auto opt_idx = m_nodes.Append([&](Node &node) { std::ranges::copy(child_ptrs, node.begin()); });
-			ptr = opt_idx ? Pointer{Pointer::Tag::kNode, (uint32_t)*opt_idx} : ptr;
-		}
-		return ptr;
+		// Null
+		if (std::ranges::all_of(child_ptrs, [](Pointer p) { return p.GetTag() == Pointer::Tag::kNull; }))
+			return {};
+		// Color
+		if (Pointer c = child_ptrs[0]; c.GetTag() == Pointer::Tag::kColor &&
+		                               std::ranges::all_of(child_ptrs.subspan(1), [c](Pointer p) { return p == c; }))
+			return c;
+		// Node (not changed)
+		if (ptr.GetTag() == Pointer::Tag::kNode &&
+		    std::ranges::equal(m_nodes.Read(ptr.GetData(), std::identity{}), child_ptrs))
+			return ptr;
+		// Need to create a new node
+		auto opt_idx = m_nodes.Append([&](Node &node) { std::ranges::copy(child_ptrs, node.begin()); });
+		return opt_idx ? Pointer{Pointer::Tag::kNode, (uint32_t)*opt_idx} : ptr;
 	}
 	inline static Pointer ClearNode(Pointer) { return Pointer{}; }
 	inline static Pointer FillNode(Pointer, hashdag::VBRColor color) {

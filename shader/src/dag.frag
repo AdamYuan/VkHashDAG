@@ -278,25 +278,18 @@ bool DAG_RayMarch(in const uint root,
 
 vec3 Color_GetLeafColor(in const uint idx) { return vec3(0, 0, 1); }
 
-bool Color_GetNodeColor(in const uint ptr, out vec3 o_rgb) {
-	uint tag = ptr >> 30u, data = ptr & 0x3FFFFFFFu;
-	o_rgb = tag == 1 ? unpackUnorm4x8(data).rgb : (tag == 2 ? Color_GetLeafColor(data + 1) : vec3(0));
-	if (tag == 0)
-		o_rgb = vec3(1, 0, 0);
-	return bool(tag);
-}
-
 vec3 Color_Fetch(in const uint root, in const uint voxel_level, in const uint leaf_level, in const uvec3 vox_pos) {
 	uint ptr = root;
 	vec3 rgb = vec3(0);
 	[[unroll]] for (uint l = 0; l < leaf_level; ++l) {
-		if (Color_GetNodeColor(ptr, rgb))
-			return rgb;
+		uint tag = ptr >> 30u, data = ptr & 0x3FFFFFFFu;
+		if (tag != 0)
+			return unpackUnorm4x8(data).rgb;
 		uvec3 o = (vox_pos >> (voxel_level - 1u - l)) & 1u;
 		ptr = uColorNodes[ptr].child[o.x | (o.y << 1u) | (o.z << 2u)];
 	}
-	Color_GetNodeColor(ptr, rgb);
-	return rgb;
+	uint tag = ptr >> 30u, data = ptr & 0x3FFFFFFFu;
+	return tag == 2u ? Color_GetLeafColor(data) : unpackUnorm4x8(data).rgb;
 }
 
 vec3 Camera_GenRay() {
