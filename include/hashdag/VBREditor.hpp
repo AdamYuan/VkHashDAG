@@ -61,10 +61,8 @@ template <std::unsigned_integral Word, VBREditor<Word> Editor_T, VBROctree<Word>
 					if (color) {
 						state.p_writer->Push(color, voxel_count);
 						state.is_final = true;
-					} else if (edit_type == EditType::kNotAffected)
+					} else if (edit_type != EditType::kProceed)
 						state.p_writer->Copy(voxel_count, fill_color);
-					else if (edit_type != EditType::kProceed)
-						state.p_writer->Push(fill_color, voxel_count);
 				}
 			}
 		}
