@@ -31,9 +31,13 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo add-apt-repository ppa:nicola-onorata/misc 
           sudo apt-get update
-          sudo apt-get install ninja-build shaderc xorg-dev gcc-13 g++-13
+          sudo apt-get install ninja-build xorg-dev gcc-13 g++-13
+
+      - uses: humbletim/install-vulkan-sdk@v1.1.1
+        with:
+          version: latest
+          cache: true
 
       - name: Configure
         shell: bash
