@@ -22,6 +22,7 @@ public:
 	void PreExecute() const override;
 
 	void SetRenderType(uint32_t x);
+	void SetBeamOptimization(bool b);
 };
 
 } // namespace rg

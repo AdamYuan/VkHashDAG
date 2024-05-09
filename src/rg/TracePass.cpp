@@ -15,6 +15,7 @@ struct PC_Data {
 	uint32_t color_root, color_leaf_level;
 	float proj_factor;
 	uint32_t type;
+	uint32_t beam_opt;
 };
 } // namespace tracer_pass
 
@@ -121,6 +122,7 @@ void TracePass::CmdExecute(const myvk::Ptr<myvk::CommandBuffer> &command_buffer)
 	    .color_leaf_level = m_color_pool_ptr->GetLeafLevel(),
 	    .proj_factor = projection_factor,
 	    .type = m_render_type,
+	    .beam_opt = m_beam_optimization,
 	};
 
 	command_buffer->CmdPushConstants(GetVkPipeline()->GetPipelineLayoutPtr(), VK_SHADER_STAGE_FRAGMENT_BIT, 0,

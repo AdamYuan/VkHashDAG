@@ -49,5 +49,6 @@ DAGRenderGraph::DAGRenderGraph(const myvk::Ptr<myvk::FrameManager> &frame_manage
 void DAGRenderGraph::PreExecute() const {}
 
 void DAGRenderGraph::SetRenderType(uint32_t x) { GetPass<TracePass>({"trace_pass"})->SetRenderType(x); }
+void DAGRenderGraph::SetBeamOptimization(bool b) { GetPass<TracePass>({"trace_pass"})->SetBeamOptimization(b); }
 
 } // namespace rg

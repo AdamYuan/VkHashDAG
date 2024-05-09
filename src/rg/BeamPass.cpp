@@ -31,9 +31,7 @@ BeamPass::BeamPass(myvk_rg::Parent parent, const Args &args) : myvk_rg::Graphics
 
 	auto beam = CreateResource<myvk_rg::ManagedImage>({"beam"}, VK_FORMAT_R32_SFLOAT);
 	beam->SetLoadOp(VK_ATTACHMENT_LOAD_OP_DONT_CARE);
-	beam->SetSizeFunc([](const VkExtent2D &extent) {
-		return myvk_rg::SubImageSize{beam_pass::GetBeamSize(extent)};
-	});
+	beam->SetSizeFunc([](const VkExtent2D &extent) { return myvk_rg::SubImageSize{beam_pass::GetBeamSize(extent)}; });
 
 	AddColorAttachmentInput<myvk_rg::Usage::kColorAttachmentW>(0, {"beam"}, beam->Alias());
 	AddDescriptorInput<myvk_rg::Usage::kStorageBufferR, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT>({0}, {"dag_nodes"},

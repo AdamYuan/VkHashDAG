@@ -17,7 +17,7 @@ jobs:
         config:
           - {
             name: "Linux X11 64",
-            os: ubuntu-24.04,
+            os: ubuntu-latest,
             artifact: "linux_x11_64.7z",
             build_type: "Release",
             cc: "gcc-13",
@@ -31,6 +31,7 @@ jobs:
 
       - name: Install dependencies
         run: |
+          sudo add-apt-repository ppa:nicola-onorata/misc 
           sudo apt-get update
           sudo apt-get install ninja-build shaderc xorg-dev gcc-13 g++-13
 

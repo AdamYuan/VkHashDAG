@@ -18,6 +18,7 @@ layout(push_constant) uniform uuPushConstant {
 	uint uColorRoot, uColorLeafLevel;
 	float uProjectionFactor;
 	uint uType;
+	uint uBeamOpt;
 };
 
 /*
@@ -70,6 +71,7 @@ uint DAG_GetLeafFirstChildBits(in const uint node) {
 bool DAG_RayMarch(in const uint root,
                   in const uint leaf_level,
                   in const float proj_factor,
+                  float t_min,
                   vec3 o,
                   vec3 d,
                   out vec3 o_hit_pos,
@@ -104,7 +106,7 @@ bool DAG_RayMarch(in const uint root,
 		octant_mask ^= 4u, t_bias.z = 3.0 * t_coef.z - t_bias.z;
 
 	// Initialize the active span of t-values.
-	float t_min = max(max(2.0 * t_coef.x - t_bias.x, 2.0 * t_coef.y - t_bias.y), 2.0 * t_coef.z - t_bias.z);
+	t_min = max(t_min, max(max(2.0 * t_coef.x - t_bias.x, 2.0 * t_coef.y - t_bias.y), 2.0 * t_coef.z - t_bias.z));
 	float t_max = min(min(t_coef.x - t_bias.x, t_coef.y - t_bias.y), t_coef.z - t_bias.z);
 	float h = t_max;
 	t_min = max(t_min, 0.0);
@@ -369,12 +371,11 @@ void main() {
 	uint vox_size, iter;
 
 	bool hit = false;
-	float beam = texture(uBeam, coord).r;
+	float beam = uBeamOpt == 0 ? 0.0 : textureLod(uBeam, coord, 0).r;
 
 	if (!isinf(beam)) {
-		o += beam * d;
-		hit = DAG_RayMarch(uDAGRoot, uDAGLeafLevel, uProjectionFactor, o, d, hit_pos, norm, vox_pos, vox_size, vox_min,
-		                   vox_max, iter);
+		hit = DAG_RayMarch(uDAGRoot, uDAGLeafLevel, uProjectionFactor, beam, o, d, hit_pos, norm, vox_pos, vox_size,
+		                   vox_min, vox_max, iter);
 	}
 
 	if (uType == 0) {

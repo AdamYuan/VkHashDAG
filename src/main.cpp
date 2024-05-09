@@ -167,7 +167,7 @@ std::future<EditResult> edit_future;
 
 float edit_radius = 128.0f;
 int render_type = 0;
-bool paint = false;
+bool paint = false, beam_opt = true;
 glm::vec3 color = {1.f, 0.0f, 0.0f};
 
 int main() {
@@ -349,6 +349,7 @@ int main() {
 		ImGui::Text("FPS %f", ImGui::GetIO().Framerate);
 		ImGui::DragFloat("Radius", &edit_radius, 1.0f, 0.0f, 2048.0f);
 		ImGui::DragFloat("Speed", &camera->m_speed, 0.0001f, 0.0001f, 0.25f);
+		ImGui::Checkbox("Beam Optimization", &beam_opt);
 		ImGui::Combo("Type", &render_type, "Diffuse\0Normal\0Iteration\0");
 		ImGui::ColorEdit3("Color", glm::value_ptr(color));
 		ImGui::Checkbox("Paint", &paint);
@@ -369,6 +370,7 @@ int main() {
 
 			command_buffer->Begin(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
 			render_graph->SetRenderType(render_type);
+			render_graph->SetBeamOptimization(beam_opt);
 			render_graph->SetCanvasSize(frame_manager->GetExtent());
 			render_graph->CmdExecute(command_buffer);
 			command_buffer->End();

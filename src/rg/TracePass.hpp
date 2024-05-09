@@ -19,6 +19,7 @@ class TracePass final : public myvk_rg::GraphicsPassBase {
 	myvk::Ptr<DAGNodePool> m_node_pool_ptr;
 	myvk::Ptr<DAGColorPool> m_color_pool_ptr;
 	uint32_t m_render_type{};
+	bool m_beam_optimization{};
 
 public:
 	struct Args {
@@ -35,6 +36,7 @@ public:
 	void CmdExecute(const myvk::Ptr<myvk::CommandBuffer> &command_buffer) const override;
 
 	void SetRenderType(uint32_t x) { m_render_type = x; }
+	void SetBeamOptimization(bool b) { m_beam_optimization = b; }
 
 	inline auto GetImageOutput() const { return MakeImageOutput({"image"}); }
 };
