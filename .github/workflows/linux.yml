@@ -32,7 +32,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install ninja-build glslc xorg-dev gcc-13 g++-13
+          sudo apt-get install ninja-build shaderc xorg-dev gcc-13 g++-13
 
       - name: Configure
         shell: bash
