@@ -12,6 +12,7 @@
 #include <concepts>
 #include <iostream>
 #include <vector>
+#include <bit>
 
 namespace hashdag {
 
