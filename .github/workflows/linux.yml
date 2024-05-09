@@ -17,7 +17,7 @@ jobs:
         config:
           - {
             name: "Linux X11 64",
-            os: ubuntu-latest,
+            os: ubuntu-24.04,
             artifact: "linux_x11_64.7z",
             build_type: "Release",
             cc: "gcc-13",
