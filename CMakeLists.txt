@@ -49,6 +49,7 @@ add_executable(VkHashDAG
         src/rg/DAGRenderGraph.cpp
         src/rg/TracePass.cpp
         src/rg/BeamPass.cpp
+        src/rg/CrosshairPass.cpp
 )
 target_include_directories(VkHashDAG PRIVATE include)
 target_link_libraries(VkHashDAG PRIVATE

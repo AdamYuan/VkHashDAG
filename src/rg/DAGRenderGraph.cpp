@@ -5,7 +5,9 @@
 #include "DAGRenderGraph.hpp"
 
 #include "BeamPass.hpp"
+#include "CrosshairPass.hpp"
 #include "TracePass.hpp"
+
 #include <myvk_rg/pass/ImGuiPass.hpp>
 #include <myvk_rg/resource/InputBuffer.hpp>
 #include <myvk_rg/resource/SwapchainImage.hpp>
@@ -62,7 +64,8 @@ void DAGRenderGraph::make_passes() {
 	                        .node_pool = m_node_pool_ptr,
 	                        .color_pool = m_color_pool_ptr,
 	                    });
-	auto imgui_pass = CreatePass<myvk_rg::ImGuiPass>({"imgui_pass"}, trace_pass->GetImageOutput());
+	auto crosshair_pass = CreatePass<CrosshairPass>({"crosshair_pass"}, trace_pass->GetImageOutput());
+	auto imgui_pass = CreatePass<myvk_rg::ImGuiPass>({"imgui_pass"}, crosshair_pass->GetImageOutput());
 	AddResult({"out"}, imgui_pass->GetImageOutput());
 }
 
