@@ -16,7 +16,7 @@ if (MSVC)
     set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS} /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup")
 endif ()
 
-if (CMAKE_BUILD_TYPE STREQUAL "Release")
+if (CMAKE_BUILD_TYPE STREQUAL "Release" AND NOT MINGW)
     include(CheckIPOSupported)
     check_ipo_supported(RESULT IPO_SUPPORTED)
     if (IPO_SUPPORTED)
