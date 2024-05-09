@@ -39,9 +39,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: crazy-max/ghaction-chocolatey@v3
+      - uses: humbletim/setup-vulkan-sdk@v1.2.0
         with:
-          args: install vulkan-sdk --acceptlicense --allow-empty-checksums --version 1.2.162.1
+          vulkan-query-version: latest
+          vulkan-components: Glslang
+          vulkan-use-cache: true
 
       - name: Configure
         shell: bash
