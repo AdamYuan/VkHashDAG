@@ -51,9 +51,7 @@ template <std::unsigned_integral Word, VBREditor<Word> Editor_T, VBROctree<Word>
 				if (color) {
 					state.octree_node = p_octree->FillNode(state.octree_node, color);
 					state.is_final = true;
-				} else if (edit_type == EditType::kFill)
-					state.octree_node = p_octree->FillNode(state.octree_node, fill_color);
-				else if (edit_type == EditType::kClear)
+				} else if (edit_type == EditType::kClear)
 					state.octree_node = p_octree->ClearNode(state.octree_node);
 				else if (edit_type == EditType::kProceed && coord.level == p_octree->GetLeafLevel())
 					state.p_writer = new VBROctreeLeafWriter<Octree_T>(p_octree->GetLeaf(state.octree_node));
