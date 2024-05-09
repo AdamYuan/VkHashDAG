@@ -70,11 +70,11 @@ myvk::Ptr<myvk::GraphicsPipeline> TracePass::CreatePipeline() const {
 
 	};
 	constexpr uint32_t kFragSpv[] = {
-#include <shader/dag.frag.u32>
+#include <shader/trace.frag.u32>
 
 	};
 	constexpr uint32_t kFragSpv_Beam[] = {
-#include <shader/dag_beam.frag.u32>
+#include <shader/trace_beam.frag.u32>
 
 	};
 

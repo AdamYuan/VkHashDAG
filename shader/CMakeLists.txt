@@ -17,8 +17,8 @@ endfunction()
 
 add_shader(quad.vert quad.vert.u32 "-O;-Os")
 add_shader(beam.frag beam.frag.u32 "-O;-Os")
-add_shader(dag.frag dag.frag.u32 "-O;-Os")
-add_shader(dag.frag dag_beam.frag.u32 "-O;-Os;-DBEAM_OPTIMIZATION")
+add_shader(trace.frag trace.frag.u32 "-O;-Os")
+add_shader(trace.frag trace_beam.frag.u32 "-O;-Os;-DBEAM_OPTIMIZATION")
 
 add_dependencies(shader shader._u32)
 target_include_directories(shader INTERFACE include)
