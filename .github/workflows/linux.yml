@@ -1,4 +1,4 @@
-name: Windows MSVC
+name: Linux GCC
 
 on:
   push:
@@ -16,34 +16,23 @@ jobs:
       matrix:
         config:
           - {
-            name: "Windows MSVC 64",
-            os: windows-latest,
-            artifact: "windows_msvc_64.7z",
+            name: "Linux X11 64",
+            os: ubuntu-latest,
+            artifact: "linux_x11_64.7z",
             build_type: "Release",
-            target: VkHashDAG,
-            arch: "x64",
+            cc: "gcc-13",
+            cxx: "g++-13",
             archiver: "7z a",
-            generators: "Visual Studio 17 2022"
+            generators: "Ninja"
           }
-          # - {
-          #   name: "Windows MSVC 32",
-          #   os: windows-latest,
-          #   artifact: "windows_msvc_32.7z",
-          #   build_type: "Release",
-          #   target: VkHashDAG,
-          #   arch: "Win32",
-          #   archiver: "7z a",
-          #   generators: "Visual Studio 17 2022"
-          # }
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v3
 
-      -
-        uses: humbletim/install-vulkan-sdk@v1.1.1
-        with:
-          version: latest
-          cache: true
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install ninja-build glslc xorg-dev gcc-13 g++-13
 
       - name: Configure
         shell: bash
@@ -52,20 +41,20 @@ jobs:
           mkdir instdir
           cmake \
             -S . \
-            -B build \
-            -T "ClangCl" \
-            -A ${{ matrix.config.arch }} \
+            -B . \
+            -DCMAKE_C_COMPILER=${{ matrix.config.cc }} \
+            -DCMAKE_CXX_COMPILER=${{ matrix.config.cxx }} \
             -DCMAKE_BUILD_TYPE=${{ matrix.config.build_type }} \
             -G "${{ matrix.config.generators }}" \
             -DCMAKE_INSTALL_PREFIX:PATH=instdir
 
       - name: Build
         shell: bash
-        run: cmake --build build --target ${{ matrix.config.target }} --config ${{ matrix.config.build_type }}
+        run: cmake --build . --config ${{ matrix.config.build_type }}
 
       - name: Install Strip
         shell: bash
-        run: cmake --install build --strip
+        run: cmake --install . --strip
 
       - name: Pack
         shell: bash
