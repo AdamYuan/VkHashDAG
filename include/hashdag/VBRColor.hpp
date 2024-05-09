@@ -17,26 +17,29 @@ namespace hashdag {
 
 class VBRColor {
 private:
-	uint32_t m_colors;
-	uint8_t m_weight, m_bits_per_weight;
+	uint32_t m_colors{};
+	uint8_t m_weight{}, m_bits_per_weight{};
+	bool m_has_value{false};
 
 public:
-	inline VBRColor() = default;
-	inline VBRColor(const RGBColor &rgb) : m_colors(RGB8Color{rgb}.GetData()), m_bits_per_weight{0} {}
-	inline VBRColor(RGB8Color color) : m_colors(color.GetData()), m_bits_per_weight{0} {}
-	inline VBRColor(R5G6B5Color left_color, R5G6B5Color right_color, uint8_t weight, uint8_t bits_per_weight)
+	inline constexpr VBRColor() = default;
+	inline constexpr VBRColor(const RGBColor &rgb) : m_colors(RGB8Color{rgb}.GetData()), m_has_value{true} {}
+	inline constexpr VBRColor(RGB8Color color) : m_colors(color.GetData()), m_has_value{true} {}
+	inline constexpr VBRColor(R5G6B5Color left_color, R5G6B5Color right_color, uint8_t weight, uint8_t bits_per_weight)
 	    : m_colors(left_color.GetData() | right_color.GetData() << 16u), m_weight{weight},
-	      m_bits_per_weight{bits_per_weight} {}
+	      m_bits_per_weight{bits_per_weight}, m_has_value{true} {}
 
-	inline glm::vec3 Get() const {
+	inline constexpr bool HasValue() const { return m_has_value; }
+	inline constexpr operator bool() const { return m_has_value; }
+	inline constexpr glm::vec3 Get() const {
 		return m_bits_per_weight == 0 ? RGB8Color{m_colors}.Get()
 		                              : glm::mix(R5G6B5Color(m_colors).Get(), R5G6B5Color(m_colors >> 16u).Get(),
 		                                         float(m_weight) / float((1u << m_bits_per_weight) - 1));
 	}
-	inline uint32_t GetColors() const { return m_colors; }
-	inline uint8_t GetWeight() const { return m_weight; }
-	inline uint8_t GetBitsPerWeight() const { return m_bits_per_weight; }
-	inline bool operator==(const VBRColor &) const = default;
+	inline constexpr uint32_t GetColors() const { return m_colors; }
+	inline constexpr uint8_t GetWeight() const { return m_weight; }
+	inline constexpr uint8_t GetBitsPerWeight() const { return m_bits_per_weight; }
+	inline constexpr bool operator==(const VBRColor &) const = default;
 };
 
 struct VBRInfo {

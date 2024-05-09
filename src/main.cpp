@@ -45,14 +45,12 @@ struct AABBEditor {
 	}
 	inline hashdag::EditType EditNode(const hashdag::Config<uint32_t> &config,
 	                                  const hashdag::NodeCoord<uint32_t> &coord, hashdag::NodePointer<uint32_t> ptr,
-	                                  hashdag::VBRColor &color, hashdag::VBRColorMode &color_mode) const {
+	                                  hashdag::VBRColor &final_color) const {
 		auto edit_type = EditNode(config, coord, {});
-		if (edit_type == hashdag::EditType::kFill)
-			color = this->color;
-		else if (!ptr || color == this->color) {
-			color = this->color;
-			color_mode = hashdag::VBRColorMode::kFinal;
-		}
+		if (edit_type == hashdag::EditType::kFill || !ptr || final_color == this->color)
+			final_color = this->color;
+		else
+			final_color = {};
 		return edit_type;
 	}
 	inline bool VoxelInRange(const hashdag::NodeCoord<uint32_t> &coord) const {
@@ -72,8 +70,8 @@ struct AABBEditor {
 
 enum class EditMode { kFill, kDig, kPaint };
 template <EditMode Mode = EditMode::kFill> struct SphereEditor {
-	glm::u32vec3 center;
-	uint64_t r2;
+	glm::u32vec3 center{};
+	uint64_t r2{};
 	hashdag::VBRColor color;
 	inline hashdag::EditType EditNode(const hashdag::Config<uint32_t> &config,
 	                                  const hashdag::NodeCoord<uint32_t> &coord, hashdag::NodePointer<uint32_t>) const {
@@ -107,19 +105,18 @@ template <EditMode Mode = EditMode::kFill> struct SphereEditor {
 	}
 	inline hashdag::EditType EditNode(const hashdag::Config<uint32_t> &config,
 	                                  const hashdag::NodeCoord<uint32_t> &coord, hashdag::NodePointer<uint32_t> ptr,
-	                                  hashdag::VBRColor &color, hashdag::VBRColorMode &color_mode) const {
+	                                  hashdag::VBRColor &final_color) const {
 		static_assert(Mode != EditMode::kDig);
 		auto edit_type = EditNode(config, coord, {});
 		if (edit_type == hashdag::EditType::kFill) {
-			color = this->color;
+			final_color = this->color;
 			if constexpr (Mode == EditMode::kPaint) {
 				edit_type = hashdag::EditType::kNotAffected;
-				color_mode = hashdag::VBRColorMode::kFinal;
 			}
-		} else if (!ptr || color == this->color) {
-			color = this->color;
-			color_mode = hashdag::VBRColorMode::kFinal;
-		}
+		} else if (!ptr || final_color == this->color) {
+			final_color = this->color;
+		} else
+			final_color = {};
 		if constexpr (Mode == EditMode::kPaint) {
 			if (!ptr)
 				edit_type = hashdag::EditType::kNotAffected;
@@ -254,7 +251,7 @@ int main() {
 			set_root(vbr_edit(AABBEditor{
 			    .aabb_min = {1001, 1000, 1000},
 			    .aabb_max = {10000, 10000, 10000},
-			    .color = hashdag::RGB8Color{0xFFFF00},
+			    .color = hashdag::RGB8Color{0xFFFFFF},
 			}));
 			set_root(vbr_edit(AABBEditor{
 			    .aabb_min = {0, 0, 0},
@@ -264,7 +261,7 @@ int main() {
 			set_root(vbr_edit(SphereEditor<EditMode::kPaint>{
 			    .center = {5005, 5000, 5000},
 			    .r2 = 2000 * 2000,
-			    .color = hashdag::RGB8Color{0xFFFFFF},
+			    .color = hashdag::RGB8Color{0xFFFF00},
 			}));
 			set_root(stateless_edit(SphereEditor<EditMode::kDig>{
 			    .center = {10000, 10000, 10000},

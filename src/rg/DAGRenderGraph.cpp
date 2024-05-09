@@ -4,6 +4,7 @@
 
 #include "DAGRenderGraph.hpp"
 
+#include "BeamPass.hpp"
 #include "TracePass.hpp"
 #include <myvk_rg/pass/ImGuiPass.hpp>
 #include <myvk_rg/resource/InputBuffer.hpp>
@@ -25,8 +26,15 @@ DAGRenderGraph::DAGRenderGraph(const myvk::Ptr<myvk::FrameManager> &frame_manage
 	auto swapchain_image = CreateResource<myvk_rg::SwapchainImage>({"swapchain_image"}, frame_manager);
 	swapchain_image->SetLoadOp(VK_ATTACHMENT_LOAD_OP_DONT_CARE);
 
+	auto beam_pass = CreatePass<BeamPass>({"beam_pass"}, BeamPass::Args{
+	                                                         .dag_nodes = dag_nodes->Alias(),
+	                                                         .camera = camera,
+	                                                         .node_pool = node_pool,
+	                                                     });
+
 	auto trace_pass = CreatePass<TracePass>({"trace_pass"}, TracePass::Args{
 	                                                            .image = swapchain_image->Alias(),
+	                                                            .beam = beam_pass->GetBeamOutput(),
 	                                                            .dag_nodes = dag_nodes->Alias(),
 	                                                            .color_nodes = color_nodes->Alias(),
 	                                                            .color_leaves = color_leaves->Alias(),

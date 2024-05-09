@@ -1,65 +1,53 @@
 //
-// Created by adamyuan on 5/7/24.
+// Created by adamyuan on 5/9/24.
 //
 
-#include "TracePass.hpp"
+#include "BeamPass.hpp"
 
 namespace rg {
 
-namespace tracer_pass {
+namespace beam_pass {
+
+inline constexpr uint32_t kBlockSize = 8;
+inline constexpr VkExtent2D GetBeamSize(VkExtent2D extent) {
+	return {
+	    .width = (extent.width + kBlockSize - 1u) / kBlockSize,
+	    .height = (extent.height + kBlockSize - 1u) / kBlockSize,
+	};
+}
+
 struct PC_Data {
 	glm::vec3 pos, look, side, up;
 	uint32_t width, height;
-	uint32_t voxel_level;
 	uint32_t dag_root, dag_leaf_level;
-	uint32_t color_root, color_leaf_level;
 	float proj_factor;
-	uint32_t type;
 };
-} // namespace tracer_pass
 
-TracePass::TracePass(myvk_rg::Parent parent, const Args &args) : myvk_rg::GraphicsPassBase(parent) {
+} // namespace beam_pass
+
+BeamPass::BeamPass(myvk_rg::Parent parent, const Args &args) : myvk_rg::GraphicsPassBase(parent) {
 	m_camera_ptr = args.camera;
 	m_node_pool_ptr = args.node_pool;
-	m_color_pool_ptr = args.color_pool;
 
-	const auto &device = GetRenderGraphPtr()->GetDevicePtr();
-	VkSamplerReductionModeCreateInfo reduction_create_info = {
-	    .sType = VK_STRUCTURE_TYPE_SAMPLER_REDUCTION_MODE_CREATE_INFO,
-	    .reductionMode = VK_SAMPLER_REDUCTION_MODE_MIN,
-	};
-	VkSamplerCreateInfo sampler_create_info = {
-	    .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-	    .pNext = &reduction_create_info,
-	    .magFilter = VK_FILTER_LINEAR,
-	    .minFilter = VK_FILTER_LINEAR,
-	    .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
-	    .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-	    .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-	    .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-	    .minLod = 0.0f,
-	    .maxLod = VK_LOD_CLAMP_NONE,
-	};
+	auto beam = CreateResource<myvk_rg::ManagedImage>({"beam"}, VK_FORMAT_R32_SFLOAT);
+	beam->SetLoadOp(VK_ATTACHMENT_LOAD_OP_DONT_CARE);
+	beam->SetSizeFunc([](const VkExtent2D &extent) {
+		return myvk_rg::SubImageSize{beam_pass::GetBeamSize(extent)};
+	});
 
-	AddColorAttachmentInput<myvk_rg::Usage::kColorAttachmentW>(0, {"image"}, args.image);
+	AddColorAttachmentInput<myvk_rg::Usage::kColorAttachmentW>(0, {"beam"}, beam->Alias());
 	AddDescriptorInput<myvk_rg::Usage::kStorageBufferR, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT>({0}, {"dag_nodes"},
 	                                                                                             args.dag_nodes);
-	AddDescriptorInput<myvk_rg::Usage::kStorageBufferR, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT>({1}, {"color_nodes"},
-	                                                                                             args.color_nodes);
-	AddDescriptorInput<myvk_rg::Usage::kStorageBufferR, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT>({2}, {"color_leaves"},
-	                                                                                             args.color_leaves);
-	AddDescriptorInput<myvk_rg::Usage::kSampledImage, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT>(
-	    {3}, {"beam"}, args.beam, myvk::Sampler::Create(device, sampler_create_info));
 }
 
-myvk::Ptr<myvk::GraphicsPipeline> TracePass::CreatePipeline() const {
+myvk::Ptr<myvk::GraphicsPipeline> BeamPass::CreatePipeline() const {
 	const auto &device = GetRenderGraphPtr()->GetDevicePtr();
 
 	auto pipeline_layout = myvk::PipelineLayout::Create(device, {GetVkDescriptorSetLayout()},
 	                                                    {VkPushConstantRange{
 	                                                        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
 	                                                        .offset = 0,
-	                                                        .size = sizeof(tracer_pass::PC_Data),
+	                                                        .size = sizeof(beam_pass::PC_Data),
 	                                                    }});
 
 	constexpr uint32_t kVertSpv[] = {
@@ -67,7 +55,7 @@ myvk::Ptr<myvk::GraphicsPipeline> TracePass::CreatePipeline() const {
 
 	};
 	constexpr uint32_t kFragSpv[] = {
-#include <shader/dag.frag.u32>
+#include <shader/beam.frag.u32>
 
 	};
 
@@ -92,35 +80,31 @@ myvk::Ptr<myvk::GraphicsPipeline> TracePass::CreatePipeline() const {
 	return myvk::GraphicsPipeline::Create(pipeline_layout, GetVkRenderPass(), shader_stages, pipeline_state,
 	                                      GetSubpass());
 }
-
-void TracePass::CmdExecute(const myvk::Ptr<myvk::CommandBuffer> &command_buffer) const {
+void BeamPass::CmdExecute(const myvk::Ptr<myvk::CommandBuffer> &command_buffer) const {
 	command_buffer->CmdBindPipeline(GetVkPipeline());
 	command_buffer->CmdBindDescriptorSets({GetVkDescriptorSet()}, GetVkPipeline());
 
 	auto extent = GetRenderGraphPtr()->GetCanvasSize();
+	auto beam_extent = beam_pass::GetBeamSize(extent);
 	float aspect_ratio = float(extent.width) / float(extent.height);
 
 	auto look_side_up = m_camera_ptr->GetLookSideUp(aspect_ratio);
 
 	float inv_2tan_half_fov = 1.0f / (2.0f * glm::tan(0.5f * m_camera_ptr->m_fov));
-	float screen_divisor = 1.0f;
+	float screen_divisor = beam_pass::kBlockSize;
 	float screen_tolerance = 1.0f / (float(extent.height) / screen_divisor);
 	float projection_factor = inv_2tan_half_fov / screen_tolerance;
 
-	tracer_pass::PC_Data pc_data{
+	beam_pass::PC_Data pc_data{
 	    .pos = m_camera_ptr->m_position,
 	    .look = look_side_up.look,
 	    .side = look_side_up.side,
 	    .up = look_side_up.up,
-	    .width = extent.width,
-	    .height = extent.height,
-	    .voxel_level = m_node_pool_ptr->GetConfig().GetVoxelLevel(),
+	    .width = beam_extent.width,
+	    .height = beam_extent.height,
 	    .dag_root = *m_node_pool_ptr->GetRoot(),
 	    .dag_leaf_level = m_node_pool_ptr->GetConfig().GetLeafLevel(),
-	    .color_root = m_color_pool_ptr->GetRoot().pointer,
-	    .color_leaf_level = m_color_pool_ptr->GetLeafLevel(),
 	    .proj_factor = projection_factor,
-	    .type = m_render_type,
 	};
 
 	command_buffer->CmdPushConstants(GetVkPipeline()->GetPipelineLayoutPtr(), VK_SHADER_STAGE_FRAGMENT_BIT, 0,
