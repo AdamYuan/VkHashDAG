@@ -167,7 +167,7 @@ std::future<EditResult> edit_future;
 
 float edit_radius = 128.0f;
 int render_type = 0;
-bool paint = false, beam_opt = true;
+bool paint = false, beam_opt = false;
 glm::vec3 color = {1.f, 0.0f, 0.0f};
 
 int main() {
@@ -301,7 +301,7 @@ int main() {
 
 	std::array<myvk::Ptr<rg::DAGRenderGraph>, kFrameCount> render_graphs;
 	for (auto &rg : render_graphs)
-		rg = myvk::MakePtr<rg::DAGRenderGraph>(frame_manager, camera, dag_node_pool, dag_color_pool);
+		rg = myvk::MakePtr<rg::DAGRenderGraph>(frame_manager, camera, dag_node_pool, dag_color_pool, beam_opt);
 
 	double prev_time = glfwGetTime();
 
@@ -370,7 +370,7 @@ int main() {
 
 			command_buffer->Begin(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
 			render_graph->SetRenderType(render_type);
-			render_graph->SetBeamOptimization(beam_opt);
+			render_graph->SetBeamOpt(beam_opt);
 			render_graph->SetCanvasSize(frame_manager->GetExtent());
 			render_graph->CmdExecute(command_buffer);
 			command_buffer->End();

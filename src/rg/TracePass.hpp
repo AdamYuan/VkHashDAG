@@ -23,7 +23,8 @@ class TracePass final : public myvk_rg::GraphicsPassBase {
 
 public:
 	struct Args {
-		const myvk_rg::Image &image, &beam;
+		const myvk_rg::Image &image;
+		const std::optional<myvk_rg::Image> &opt_beam;
 		const myvk_rg::Buffer &dag_nodes, &color_nodes, &color_leaves;
 		const myvk::Ptr<Camera> &camera;
 		const myvk::Ptr<DAGNodePool> &node_pool;
@@ -36,7 +37,6 @@ public:
 	void CmdExecute(const myvk::Ptr<myvk::CommandBuffer> &command_buffer) const override;
 
 	void SetRenderType(uint32_t x) { m_render_type = x; }
-	void SetBeamOptimization(bool b) { m_beam_optimization = b; }
 
 	inline auto GetImageOutput() const { return MakeImageOutput({"image"}); }
 };

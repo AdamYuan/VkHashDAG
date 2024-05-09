@@ -6,7 +6,9 @@ layout(std430, binding = 0) readonly buffer uuDAGNodes { uint uDAGNodes[]; };
 layout(std430, binding = 1) readonly buffer uuColorNodes { uint uColorNodes[]; };
 layout(std430, binding = 2) readonly buffer uuColorLeaves { uint uColorLeaves[]; };
 
+#ifdef BEAM_OPTIMIZATION
 layout(binding = 3) uniform sampler2D uBeam;
+#endif
 
 layout(location = 0) out vec4 oColor;
 
@@ -18,7 +20,6 @@ layout(push_constant) uniform uuPushConstant {
 	uint uColorRoot, uColorLeafLevel;
 	float uProjectionFactor;
 	uint uType;
-	uint uBeamOpt;
 };
 
 /*
@@ -71,7 +72,7 @@ uint DAG_GetLeafFirstChildBits(in const uint node) {
 bool DAG_RayMarch(in const uint root,
                   in const uint leaf_level,
                   in const float proj_factor,
-                  float t_min,
+                  in const float proj_bias,
                   vec3 o,
                   vec3 d,
                   out vec3 o_hit_pos,
@@ -106,7 +107,7 @@ bool DAG_RayMarch(in const uint root,
 		octant_mask ^= 4u, t_bias.z = 3.0 * t_coef.z - t_bias.z;
 
 	// Initialize the active span of t-values.
-	t_min = max(t_min, max(max(2.0 * t_coef.x - t_bias.x, 2.0 * t_coef.y - t_bias.y), 2.0 * t_coef.z - t_bias.z));
+	float t_min = max(max(2.0 * t_coef.x - t_bias.x, 2.0 * t_coef.y - t_bias.y), 2.0 * t_coef.z - t_bias.z);
 	float t_max = min(min(t_coef.x - t_bias.x, t_coef.y - t_bias.y), t_coef.z - t_bias.z);
 	float h = t_max;
 	t_min = max(t_min, 0.0);
@@ -149,7 +150,7 @@ bool DAG_RayMarch(in const uint root,
 			vec3 t_center = half_scale_exp2 * t_coef + t_corner;
 
 			if (t_min <= tv_max) {
-				if (scale < leaf_scale || scale_exp2 * proj_factor < tc_max)
+				if (scale < leaf_scale || scale_exp2 * proj_factor < tc_max + proj_bias)
 					break;
 
 				// PUSH
@@ -371,12 +372,16 @@ void main() {
 	uint vox_size, iter;
 
 	bool hit = false;
-	float beam = uBeamOpt == 0 ? 0.0 : textureLod(uBeam, coord, 0).r;
-
+#ifdef BEAM_OPTIMIZATION
+	float beam = textureLod(uBeam, coord, 0).r * 0.98;
 	if (!isinf(beam)) {
-		hit = DAG_RayMarch(uDAGRoot, uDAGLeafLevel, uProjectionFactor, beam, o, d, hit_pos, norm, vox_pos, vox_size,
-		                   vox_min, vox_max, iter);
+		hit = DAG_RayMarch(uDAGRoot, uDAGLeafLevel, uProjectionFactor, beam, o + beam * d, d, hit_pos, norm, vox_pos,
+		                   vox_size, vox_min, vox_max, iter);
 	}
+#else
+	hit = DAG_RayMarch(uDAGRoot, uDAGLeafLevel, uProjectionFactor, 0, o, d, hit_pos, norm, vox_pos, vox_size, vox_min,
+	                   vox_max, iter);
+#endif
 
 	if (uType == 0) {
 		float diffuse = max(dot(norm, normalize(vec3(4, 5, 3))), 0.0) * .5 + .5;

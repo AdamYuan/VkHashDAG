@@ -15,7 +15,6 @@ struct PC_Data {
 	uint32_t color_root, color_leaf_level;
 	float proj_factor;
 	uint32_t type;
-	uint32_t beam_opt;
 };
 } // namespace tracer_pass
 
@@ -23,24 +22,7 @@ TracePass::TracePass(myvk_rg::Parent parent, const Args &args) : myvk_rg::Graphi
 	m_camera_ptr = args.camera;
 	m_node_pool_ptr = args.node_pool;
 	m_color_pool_ptr = args.color_pool;
-
-	const auto &device = GetRenderGraphPtr()->GetDevicePtr();
-	VkSamplerReductionModeCreateInfo reduction_create_info = {
-	    .sType = VK_STRUCTURE_TYPE_SAMPLER_REDUCTION_MODE_CREATE_INFO,
-	    .reductionMode = VK_SAMPLER_REDUCTION_MODE_MIN,
-	};
-	VkSamplerCreateInfo sampler_create_info = {
-	    .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-	    .pNext = &reduction_create_info,
-	    .magFilter = VK_FILTER_LINEAR,
-	    .minFilter = VK_FILTER_LINEAR,
-	    .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
-	    .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-	    .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-	    .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-	    .minLod = 0.0f,
-	    .maxLod = VK_LOD_CLAMP_NONE,
-	};
+	m_beam_optimization = args.opt_beam.has_value();
 
 	AddColorAttachmentInput<myvk_rg::Usage::kColorAttachmentW>(0, {"image"}, args.image);
 	AddDescriptorInput<myvk_rg::Usage::kStorageBufferR, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT>({0}, {"dag_nodes"},
@@ -49,8 +31,28 @@ TracePass::TracePass(myvk_rg::Parent parent, const Args &args) : myvk_rg::Graphi
 	                                                                                             args.color_nodes);
 	AddDescriptorInput<myvk_rg::Usage::kStorageBufferR, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT>({2}, {"color_leaves"},
 	                                                                                             args.color_leaves);
-	AddDescriptorInput<myvk_rg::Usage::kSampledImage, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT>(
-	    {3}, {"beam"}, args.beam, myvk::Sampler::Create(device, sampler_create_info));
+
+	if (m_beam_optimization) {
+		const auto &device = GetRenderGraphPtr()->GetDevicePtr();
+		VkSamplerReductionModeCreateInfo reduction_create_info = {
+		    .sType = VK_STRUCTURE_TYPE_SAMPLER_REDUCTION_MODE_CREATE_INFO,
+		    .reductionMode = VK_SAMPLER_REDUCTION_MODE_MIN,
+		};
+		VkSamplerCreateInfo sampler_create_info = {
+		    .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+		    .pNext = &reduction_create_info,
+		    .magFilter = VK_FILTER_LINEAR,
+		    .minFilter = VK_FILTER_LINEAR,
+		    .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+		    .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+		    .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+		    .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+		    .minLod = 0.0f,
+		    .maxLod = VK_LOD_CLAMP_NONE,
+		};
+		AddDescriptorInput<myvk_rg::Usage::kSampledImage, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT>(
+		    {3}, {"beam"}, *args.opt_beam, myvk::Sampler::Create(device, sampler_create_info));
+	}
 }
 
 myvk::Ptr<myvk::GraphicsPipeline> TracePass::CreatePipeline() const {
@@ -71,10 +73,17 @@ myvk::Ptr<myvk::GraphicsPipeline> TracePass::CreatePipeline() const {
 #include <shader/dag.frag.u32>
 
 	};
+	constexpr uint32_t kFragSpv_Beam[] = {
+#include <shader/dag_beam.frag.u32>
+
+	};
 
 	std::shared_ptr<myvk::ShaderModule> vert_shader_module, frag_shader_module;
 	vert_shader_module = myvk::ShaderModule::Create(device, kVertSpv, sizeof(kVertSpv));
-	frag_shader_module = myvk::ShaderModule::Create(device, kFragSpv, sizeof(kFragSpv));
+	if (m_beam_optimization)
+		frag_shader_module = myvk::ShaderModule::Create(device, kFragSpv_Beam, sizeof(kFragSpv_Beam));
+	else
+		frag_shader_module = myvk::ShaderModule::Create(device, kFragSpv, sizeof(kFragSpv));
 
 	std::vector shader_stages = {vert_shader_module->GetPipelineShaderStageCreateInfo(VK_SHADER_STAGE_VERTEX_BIT),
 	                             frag_shader_module->GetPipelineShaderStageCreateInfo(VK_SHADER_STAGE_FRAGMENT_BIT)};
@@ -122,7 +131,6 @@ void TracePass::CmdExecute(const myvk::Ptr<myvk::CommandBuffer> &command_buffer)
 	    .color_leaf_level = m_color_pool_ptr->GetLeafLevel(),
 	    .proj_factor = projection_factor,
 	    .type = m_render_type,
-	    .beam_opt = m_beam_optimization,
 	};
 
 	command_buffer->CmdPushConstants(GetVkPipeline()->GetPipelineLayoutPtr(), VK_SHADER_STAGE_FRAGMENT_BIT, 0,

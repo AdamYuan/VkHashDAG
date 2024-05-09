@@ -1,35 +1,24 @@
 cmake_minimum_required(VERSION 3.15)
 project(VkHashDAG)
 
-set(SHADER_SRC
-        quad.vert
-        beam.frag
-        dag.frag
-)
-
 find_program(GLSLC "glslc" REQUIRED)
 
-function(add_spirv_shader INPUT_FILE)
-    add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/include/shader/${INPUT_FILE}.u32
-            COMMAND glslc src/${INPUT_FILE} -o include/shader/${INPUT_FILE}.u32 -O -Os -mfmt=num --target-env=vulkan1.1
+add_library(shader INTERFACE)
+
+function(add_shader INPUT_FILE OUTPUT_FILE OPTION)
+    add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/include/shader/${OUTPUT_FILE}
+            COMMAND glslc src/${INPUT_FILE} -o include/shader/${OUTPUT_FILE} -mfmt=num --target-env=vulkan1.3 ${OPTION}
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
             DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/${INPUT_FILE}
     )
+    add_custom_target(shader_${OUTPUT_FILE} ALL DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/include/shader/${OUTPUT_FILE})
+    add_dependencies(shader shader_${OUTPUT_FILE})
 endfunction()
 
-foreach (X IN LISTS SHADER_SRC)
-    add_spirv_shader(${X})
-endforeach ()
+add_shader(quad.vert quad.vert.u32 "-O;-Os")
+add_shader(beam.frag beam.frag.u32 "-O;-Os")
+add_shader(dag.frag dag.frag.u32 "-O;-Os")
+add_shader(dag.frag dag_beam.frag.u32 "-O;-Os;-DBEAM_OPTIMIZATION")
 
-set(SHADER_U32)
-foreach (X IN LISTS SHADER_SRC)
-    list(APPEND SHADER_U32 include/shader/${X}.u32)
-endforeach ()
-
-add_custom_target(
-        shader_u32 ALL DEPENDS
-        ${SHADER_U32}
-)
-add_library(shader INTERFACE)
-add_dependencies(shader shader_u32)
+add_dependencies(shader shader._u32)
 target_include_directories(shader INTERFACE include)
