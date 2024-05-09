@@ -181,9 +181,11 @@ int main() {
 		auto instance = myvk::Instance::CreateWithGlfwExtensions();
 		auto surface = myvk::Surface::Create(instance, window);
 		auto physical_device = myvk::PhysicalDevice::Fetch(instance)[0];
-		device = myvk::Device::Create(
-		    physical_device, GPSQueueSelector{&generic_queue, &sparse_queue, surface, &present_queue},
-		    physical_device->GetDefaultFeatures(), {VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_SWAPCHAIN_EXTENSION_NAME});
+		auto features = physical_device->GetDefaultFeatures();
+		features.vk12.samplerFilterMinmax = VK_TRUE;
+		device = myvk::Device::Create(physical_device,
+		                              GPSQueueSelector{&generic_queue, &sparse_queue, surface, &present_queue},
+		                              features, {VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_SWAPCHAIN_EXTENSION_NAME});
 	}
 
 	auto frame_manager = myvk::FrameManager::Create(generic_queue, present_queue, false, kFrameCount);
