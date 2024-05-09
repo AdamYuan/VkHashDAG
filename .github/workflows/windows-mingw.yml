@@ -21,6 +21,7 @@ jobs:
             artifact: "windows_mingw_32.7z",
             build_type: "Release",
             sys: mingw32,
+            target: VkHashDAG,
             env: i686,
             cc: "i686-w64-mingw32-gcc",
             cxx: "i686-w64-mingw32-g++",
@@ -33,6 +34,7 @@ jobs:
             artifact: "windows_mingw_64.7z",
             build_type: "Release",
             sys: mingw64,
+            target: VkHashDAG,
             env: x86_64,
             cc: "x86_64-w64-mingw32-gcc",
             cxx: "x86_64-w64-mingw32-g++",
@@ -66,7 +68,7 @@ jobs:
 
       - name: Build
         shell: msys2 {0}
-        run: cmake --build build --config ${{ matrix.config.build_type }}
+        run: cmake --build build --target ${{ matrix.config.target }} --config ${{ matrix.config.build_type }}
 
       - name: Install Strip
         shell: msys2 {0}
