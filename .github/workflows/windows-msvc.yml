@@ -39,8 +39,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - shell: bash
-        run: choco install vulkan-sdk
+      - uses: crazy-max/ghaction-chocolatey@v3
+        with:
+          args: install vulkan-sdk
 
       - name: Configure
         shell: bash
