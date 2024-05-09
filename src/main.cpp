@@ -263,7 +263,7 @@ int main() {
 			set_root(vbr_edit(SphereEditor<EditMode::kPaint>{
 			    .center = {5005, 5000, 5000},
 			    .r2 = 2000 * 2000,
-			    .color = hashdag::RGB8Color{0xFFFF00},
+			    .color = hashdag::RGB8Color{0x007FFF},
 			}));
 			set_root(stateless_edit(SphereEditor<EditMode::kDig>{
 			    .center = {10000, 10000, 10000},

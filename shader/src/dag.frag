@@ -352,7 +352,7 @@ vec3 Color_Fetch(in const uint root, in const uint voxel_level, in const uint le
 }
 
 vec3 Camera_GenRay(vec2 coord) {
-	coord = coord * 2.0f - 1.0f;
+	coord = coord * 2.0 - 1.0;
 	return normalize(vec3(uLookX, uLookY, uLookZ) - vec3(uSideX, uSideY, uSideZ) * coord.x -
 	                 vec3(uUpX, uUpY, uUpZ) * coord.y);
 }
@@ -372,7 +372,7 @@ void main() {
 	float beam = texture(uBeam, coord).r;
 
 	if (!isinf(beam)) {
-		o += (beam * 0.95) * d;
+		o += beam * d;
 		hit = DAG_RayMarch(uDAGRoot, uDAGLeafLevel, uProjectionFactor, o, d, hit_pos, norm, vox_pos, vox_size, vox_min,
 		                   vox_max, iter);
 	}

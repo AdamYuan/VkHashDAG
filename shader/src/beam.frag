@@ -213,15 +213,15 @@ bool DAG_RayMarch(in const uint root,
 	return scale < STACK_SIZE && t_min <= t_max;
 }
 
-vec3 Camera_GenRay() {
-	vec2 coord = gl_FragCoord.xy / vec2(uWidth, uHeight);
-	coord = coord * 2.0f - 1.0f;
+vec3 Camera_GenRay(vec2 coord) {
+	coord = coord * 2.0 - 1.0;
 	return normalize(vec3(uLookX, uLookY, uLookZ) - vec3(uSideX, uSideY, uSideZ) * coord.x -
 	                 vec3(uUpX, uUpY, uUpZ) * coord.y);
 }
 
 void main() {
-	vec3 o = vec3(uPosX, uPosY, uPosZ), d = Camera_GenRay();
+	vec2 coord = gl_FragCoord.xy / vec2(uWidth, uHeight);
+	vec3 o = vec3(uPosX, uPosY, uPosZ), d = Camera_GenRay(coord);
 
 	float t, vox_scale;
 	bool hit = DAG_RayMarch(uDAGRoot, uDAGLeafLevel, uProjectionFactor, o, d, t, vox_scale);
