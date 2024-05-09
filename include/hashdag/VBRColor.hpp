@@ -9,10 +9,10 @@
 #include "Color.hpp"
 
 #include <algorithm>
+#include <bit>
 #include <concepts>
 #include <iostream>
 #include <vector>
-#include <bit>
 
 namespace hashdag {
 
@@ -60,6 +60,8 @@ concept VBRContainer = requires(const T &t, std::size_t idx) {
 	{ t.empty() } -> std::convertible_to<bool>;
 };
 
+template <typename T> using VBRWriterContainer = std::vector<T>;
+
 template <std::unsigned_integral Word, template <typename> typename Container> class VBRBitset {
 private:
 	inline static constexpr Word kWordBits = VBRWordInfo<Word>::kBits, kWordMask = VBRWordInfo<Word>::kMask,
@@ -96,12 +98,14 @@ private:
 	inline static constexpr Word kWordBits = VBRWordInfo<Word>::kBits, kWordMask = VBRWordInfo<Word>::kMask,
 	                             kWordMaskBits = VBRWordInfo<Word>::kMaskBits;
 
-	std::vector<Word> m_bits;
+	VBRWriterContainer<Word> m_bits;
 	std::size_t m_bit_count = 0;
 
 public:
 	inline std::size_t GetBitCount() const { return m_bit_count; }
-	inline VBRBitset<Word, std::vector> Flush() { return VBRBitset<Word, std::vector>{std::move(m_bits)}; }
+	inline VBRBitset<Word, VBRWriterContainer> Flush() {
+		return VBRBitset<Word, VBRWriterContainer>{std::move(m_bits)};
+	}
 
 	// unit bits = 0, 1, 2, 3 is guaranteed for VBR
 	inline void Push(Word word, Word bits) {
@@ -370,8 +374,8 @@ private:
 	static constexpr uint32_t kVoxelBitsPerMacroBlock = VBRInfo::kVoxelBitsPerMacroBlock;
 	static constexpr uint32_t kVoxelsPerMacroBlock = VBRInfo::kVoxelsPerMacroBlock;
 
-	std::vector<VBRMacroBlock> m_macro_blocks;
-	std::vector<VBRBlockHeader> m_block_headers;
+	VBRWriterContainer<VBRMacroBlock> m_macro_blocks;
+	VBRWriterContainer<VBRBlockHeader> m_block_headers;
 	VBRBitsetWriter<Word> m_weight_bits;
 
 	VBRChunkIterator<Word, Container> m_src_iterator;
@@ -454,9 +458,9 @@ public:
 	inline explicit VBRChunkWriter(VBRChunk<Word, Container> &&chunk) : m_src_iterator(std::move(chunk)) {}
 
 	inline uint32_t GetVoxelCount() const { return m_voxel_count; }
-	inline VBRChunk<Word, std::vector> Flush() {
-		return VBRChunk<Word, std::vector>{std::move(m_macro_blocks), std::move(m_block_headers),
-		                                   m_weight_bits.Flush()};
+	inline VBRChunk<Word, VBRWriterContainer> Flush() {
+		return VBRChunk<Word, VBRWriterContainer>{std::move(m_macro_blocks), std::move(m_block_headers),
+		                                          m_weight_bits.Flush()};
 	}
 	inline void Copy(uint32_t voxel_count, VBRColor empty_color) {
 		if (m_src_iterator.Empty()) {

@@ -23,12 +23,17 @@
 #include "Range.hpp"
 #include "VkPagedBuffer.hpp"
 
+namespace dag_phmap {
+template <typename K, typename V> using flat_hash_map = phmap::flat_hash_map<K, V>;
+template <typename K> using flat_hash_set = phmap::flat_hash_set<K>;
+} // namespace dag_phmap
+
 class DAGNodePool final
     : public myvk::DeviceObjectBase,
       public hashdag::NodePoolBase<DAGNodePool, uint32_t>,
       public hashdag::NodePoolTraversal<DAGNodePool, uint32_t>,
       public hashdag::NodePoolThreadedEdit<DAGNodePool, uint32_t>,
-      public hashdag::NodePoolThreadedGC<DAGNodePool, uint32_t, phmap::flat_hash_map, phmap::flat_hash_set> {
+      public hashdag::NodePoolThreadedGC<DAGNodePool, uint32_t, dag_phmap::flat_hash_map, dag_phmap::flat_hash_set> {
 public:
 	using WordSpanHasher = hashdag::MurmurHasher32;
 

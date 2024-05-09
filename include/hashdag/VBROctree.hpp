@@ -27,7 +27,7 @@ concept VBROctree = requires(T e, const T ce, VBROctreePointer<T> pointer, VBROc
 	{ e.FillNode(pointer, VBRColor{}) } -> std::convertible_to<decltype(pointer)>;
 
 	{ ce.GetLeaf(pointer) } -> std::convertible_to<decltype(leaf)>;
-	{ e.SetLeaf(pointer, VBRChunk<Word, std::vector>{}) } -> std::convertible_to<decltype(pointer)>;
+	{ e.SetLeaf(pointer, VBRChunk<Word, VBRWriterContainer>{}) } -> std::convertible_to<decltype(pointer)>;
 	{ ce.GetLeafLevel() } -> std::convertible_to<Word>;
 };
 

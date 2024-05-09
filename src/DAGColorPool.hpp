@@ -63,7 +63,8 @@ private:
 	                              std::allocator<std::pair<uint32_t, Range<uint32_t>>>, 6, std::mutex>
 	    m_leaf_page_write_ranges;
 
-	inline void write_leaf_chunk(std::size_t idx, const hashdag::VBRChunk<uint32_t, std::vector> &chunk) {
+	inline void write_leaf_chunk(std::size_t idx,
+	                             const hashdag::VBRChunk<uint32_t, hashdag::VBRWriterContainer> &chunk) {
 		// Write Sizes
 		m_leaves.Write(idx++, [&](uint32_t &x) { x = chunk.GetMacroBlocks().size(); });
 		m_leaves.Write(idx++, [&](uint32_t &x) { x = chunk.GetBlockHeaders().size(); });
@@ -168,7 +169,7 @@ public:
 		return ptr.GetTag() == Pointer::Tag::kLeaf ? fetch_leaf_chunk(ptr.GetData() + 1)
 		                                           : hashdag::VBRChunk<uint32_t, SafeLeafSpan>{};
 	}
-	inline Pointer SetLeaf(Pointer ptr, hashdag::VBRChunk<uint32_t, std::vector> &&chunk) {
+	inline Pointer SetLeaf(Pointer ptr, hashdag::VBRChunk<uint32_t, hashdag::VBRWriterContainer> &&chunk) {
 		std::size_t data_size = chunk.GetMacroBlocks().size() * kVBRStructWords +
 		                        chunk.GetBlockHeaders().size() * kVBRStructWords +
 		                        chunk.GetWeightBits().GetWords().size() + 4;
