@@ -41,7 +41,7 @@ jobs:
 
       - uses: crazy-max/ghaction-chocolatey@v3
         with:
-          args: install vulkan-sdk --acceptlicense --allow-empty-checksums --disable-repository-optimizations
+          args: install vulkan-sdk --acceptlicense --allow-empty-checksums --version 1.2.162.1
 
       - name: Configure
         shell: bash
