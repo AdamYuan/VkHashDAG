@@ -8,7 +8,7 @@ target_include_directories(shader INTERFACE include)
 
 function(add_shader INPUT_FILE OUTPUT_FILE OPTION)
     add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/include/shader/${OUTPUT_FILE}
-            COMMAND glslc src/${INPUT_FILE} -o include/shader/${OUTPUT_FILE} -mfmt=num --target-env=vulkan1.3 ${OPTION}
+            COMMAND ${GLSLC} src/${INPUT_FILE} -o include/shader/${OUTPUT_FILE} -mfmt=num --target-env=vulkan1.3 ${OPTION}
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
             DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/${INPUT_FILE}
     )
