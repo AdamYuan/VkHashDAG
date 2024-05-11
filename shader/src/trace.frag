@@ -128,7 +128,7 @@ bool DAG_RayMarch(in const uint root,
 
 	const uint leaf_scale = STACK_SIZE - leaf_level;
 
-	while (scale < STACK_SIZE) {
+	[[unroll]] while (scale < STACK_SIZE) {
 		++iter;
 
 		if (child_bits == 0u)

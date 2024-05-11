@@ -281,12 +281,12 @@ int main() {
 		if (edit_future.valid() && edit_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
 			set_root(edit_future.get());
 	};
-	const auto push_edit = [&]<typename Editor_T>(auto &&edit_func, Editor_T &&editor) {
+	const auto push_edit = [&]<typename... Args>(auto &&edit_func, Args &&...args) {
 		if (edit_future.valid())
 			return;
 		edit_future = edit_pool.enqueue([&]() {
 			EditResult result;
-			auto edit_ns = ns([&]() { result = edit_func(std::forward<Editor_T>(editor)); });
+			auto edit_ns = ns([&]() { result = edit_func(std::forward<Args>(args)...); });
 			printf("edit cost %lf ms\n", (double)edit_ns / 1000000.0);
 			auto flush_ns = ns([&]() { flush(); });
 			printf("flush cost %lf ms\n", (double)flush_ns / 1000000.0);

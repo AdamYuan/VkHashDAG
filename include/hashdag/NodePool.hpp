@@ -6,10 +6,8 @@
 #ifndef VKHASHDAG_HASHDAG_NODEPOOL_HPP
 #define VKHASHDAG_HASHDAG_NODEPOOL_HPP
 
-#include "Config.hpp"
 #include "Editor.hpp"
 #include "Hasher.hpp"
-#include "Iterator.hpp"
 #include "NodeCoord.hpp"
 #include "NodePointer.hpp"
 
