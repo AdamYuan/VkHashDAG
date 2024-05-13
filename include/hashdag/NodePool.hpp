@@ -98,9 +98,9 @@ public:
 	inline NodePointer<Word> find_node(auto &&get_node_words, Word bucket_index, Word bucket_words,
 	                                   Word bucket_word_offset, std::span<const Word, NodeSpanExtent> node_span) {
 		// Calculate the words to find among
-		Word find_words = bucket_words - bucket_word_offset;
-		if (find_words == 0)
+		if (bucket_words <= bucket_word_offset)
 			return NodePointer<Word>::Null();
+		Word find_words = bucket_words - bucket_word_offset;
 
 		// Page index to find
 		Word page_index =
