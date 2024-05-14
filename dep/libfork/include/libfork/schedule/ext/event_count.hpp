@@ -1,54 +1,47 @@
 #pragma once
 
-/**
- * This file has been modified by C.J.Williams to act as a standalone
- * version of folly::event_count utilizing c++20's futex wait facilities.
- *
- * Copyright (c) Conor Williams, Meta Platforms, Inc. and its affiliates.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright (c) Conor Williams, Meta Platforms, Inc. and its affiliates.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
-#include <atomic>
-#include <bit>
-#include <cstdint>
-#include <thread>
-#include <type_traits>
+// The contents of this file have been adapted from https://github.com/facebook/folly
 
-#include "libfork/detail/utility.hpp"
+#include <atomic>     // for atomic, memory_order_acq_rel, memory_order_seq_cst
+#include <bit>        // for endian
+#include <cstddef>    // for size_t
+#include <cstdint>    // for uint64_t, uint32_t
+#include <functional> // for invoke
+
+#include "libfork/core/impl/utility.hpp" // for immovable
+#include "libfork/core/macro.hpp"        // for LF_ASSERT, LF_CATCH_ALL, LF_RETHROW, LF_TRY
 
 /**
  * @file event_count.hpp
  *
- * @brief A standalone adaptation of ``folly::EventCount``.
+ * @brief A standalone adaptation of ``folly::EventCount`` utilizing C++20's atomic wait facilities.
+ *
+ * This file has been adapted from:
+ * ``https://github.com/facebook/folly/blob/main/folly/experimental/EventCount.h``
  */
 
 namespace lf {
 
-namespace detail {
-
-constexpr bool k_is_little_endian = std::endian::native != std::endian::little;
-
-constexpr bool k_is_big_endian = std::endian::native != std::endian::big;
-
-static_assert(k_is_little_endian || k_is_big_endian, "mixed endian systems are not supported");
-
-}  // namespace detail
+inline namespace ext {
 
 /**
  * @brief A condition variable for lock free algorithms.
  *
- * \rst
+ *
  *
  * See http://www.1024cores.net/home/lock-free-algorithms/eventcounts for details.
  *
@@ -71,13 +64,18 @@ static_assert(k_is_little_endian || k_is_big_endian, "mixed endian systems are n
  *
  * This means that you can use an event_count in the following manner:
  *
+ * \rst
+ *
  * Waiter:
  *
  * .. code::
  *
  *    if (!condition()) {  // handle fast path first
  *      for (;;) {
- *        if (auto key = eventCount.prepare_wait(); condition()) {
+ *
+ *        auto key = eventCount.prepare_wait();
+ *
+ *        if (condition()) {
  *          eventCount.cancel_wait();
  *          break;
  *        } else {
@@ -106,15 +104,8 @@ static_assert(k_is_little_endian || k_is_big_endian, "mixed endian systems are n
  *
  * \endrst
  */
-class event_count {
+class event_count : impl::immovable<event_count> {
  public:
-  event_count() = default;
-  event_count(event_count const&) = delete;
-  event_count(event_count&&) = delete;
-  auto operator=(event_count const&) -> event_count& = delete;
-  auto operator=(event_count&&) -> event_count& = delete;
-  ~event_count() = default;
-
   /**
    * @brief The return type of ``prepare_wait()``.
    */
@@ -152,26 +143,27 @@ class event_count {
    * Cleans up appropriately if ``condition()`` throws, and then rethrow.
    */
   template <typename Pred>
-  requires std::is_invocable_r_v<bool, Pred const&>
-  void await(Pred const& condition);
+    requires std::is_invocable_r_v<bool, Pred const &>
+  void await(Pred const &condition) noexcept(std::is_nothrow_invocable_r_v<bool, Pred const &>);
 
  private:
-  auto epoch() noexcept -> std::atomic<std::uint32_t>* {
-    // NOLINTNEXTLINE
-    return reinterpret_cast<std::atomic<std::uint32_t>*>(&m_val) + k_epoch_offset;
+  auto epoch() noexcept -> std::atomic<std::uint32_t> * {
+    return reinterpret_cast<std::atomic<std::uint32_t> *>(&m_val) + k_epoch_offset; // NOLINT
   }
 
   // This requires 64-bit
-  static constexpr std::size_t k_4byte = 4;
-  static constexpr std::size_t k_8byte = 8;
+  static_assert(sizeof(std::uint32_t) == 4, "bad platform, need 32 bit ints");
+  static_assert(sizeof(std::uint64_t) == 8, "bad platform, need 64 bit ints");
 
-  static_assert(sizeof(int) == k_4byte, "bad platform, need 64 bit native int");
-  static_assert(sizeof(std::uint32_t) == k_4byte, "bad platform, need 32 bit ints");
-  static_assert(sizeof(std::uint64_t) == k_8byte, "bad platform, need 64 bit ints");
-  static_assert(sizeof(std::atomic<std::uint32_t>) == k_4byte, "bad platform, need 32 bit atomic ints");
-  static_assert(sizeof(std::atomic<std::uint64_t>) == k_8byte, "bad platform, need 64 bit atomic ints");
+  static_assert(sizeof(std::atomic<std::uint32_t>) == 4, "bad platform, need 32 bit atomic ints");
+  static_assert(sizeof(std::atomic<std::uint64_t>) == 8, "bad platform, need 64 bit atomic ints");
 
-  static constexpr size_t k_epoch_offset = detail::k_is_little_endian ? 1 : 0;
+  static constexpr bool k_is_little_endian = std::endian::native == std::endian::little;
+  static constexpr bool k_is_big_endian = std::endian::native == std::endian::big;
+
+  static_assert(k_is_little_endian || k_is_big_endian, "bad platform, mixed endian");
+
+  static constexpr size_t k_epoch_offset = k_is_little_endian ? 1 : 0;
 
   static constexpr std::uint64_t k_add_waiter = 1;
   static constexpr std::uint64_t k_sub_waiter = static_cast<std::uint64_t>(-1);
@@ -179,26 +171,26 @@ class event_count {
   static constexpr std::uint64_t k_add_epoch = static_cast<std::uint64_t>(1) << k_epoch_shift;
   static constexpr std::uint64_t k_waiter_mask = k_add_epoch - 1;
 
-  // m_val stores the epoch in the most significant 32 bits and the
-  // waiter count in the least significant 32 bits.
-  alignas(detail::k_cache_line) std::atomic<std::uint64_t> m_val = 0;
+  // Stores the epoch in the most significant 32 bits and the waiter count in the least significant 32 bits.
+  std::atomic<std::uint64_t> m_val = 0;
 };
 
 inline void event_count::notify_one() noexcept {
-  if (m_val.fetch_add(k_add_epoch, std::memory_order_acq_rel) & k_waiter_mask) [[unlikely]] {  // NOLINT
+  if (m_val.fetch_add(k_add_epoch, std::memory_order_acq_rel) & k_waiter_mask) [[unlikely]] { // NOLINT
     epoch()->notify_one();
   }
 }
 
 inline void event_count::notify_all() noexcept {
-  if (m_val.fetch_add(k_add_epoch, std::memory_order_acq_rel) & k_waiter_mask) [[unlikely]] {  // NOLINT
+  if (m_val.fetch_add(k_add_epoch, std::memory_order_acq_rel) & k_waiter_mask) [[unlikely]] { // NOLINT
     epoch()->notify_all();
   }
 }
 
 [[nodiscard]] inline auto event_count::prepare_wait() noexcept -> event_count::key {
   auto prev = m_val.fetch_add(k_add_waiter, std::memory_order_acq_rel);
-  return key(prev >> k_epoch_shift);
+  // Cast is safe because we're only using the lower 32 bits.
+  return key(static_cast<std::uint32_t>(prev >> k_epoch_shift));
 }
 
 inline void event_count::cancel_wait() noexcept {
@@ -207,7 +199,7 @@ inline void event_count::cancel_wait() noexcept {
   // (and thus system calls).
   auto prev = m_val.fetch_add(k_sub_waiter, std::memory_order_seq_cst);
 
-  ASSERT_ASSUME((prev & k_waiter_mask) != 0, "wait fails");
+  LF_ASSERT((prev & k_waiter_mask) != 0);
 }
 
 inline void event_count::wait(key in_key) noexcept {
@@ -219,19 +211,20 @@ inline void event_count::wait(key in_key) noexcept {
   // (and thus system calls)
   auto prev = m_val.fetch_add(k_sub_waiter, std::memory_order_seq_cst);
 
-  ASSERT_ASSUME((prev & k_waiter_mask) != 0, "wait fails");
+  LF_ASSERT((prev & k_waiter_mask) != 0);
 }
 
 template <class Pred>
-requires std::is_invocable_r_v<bool, Pred const&>
-void event_count::await(Pred const& condition) {
+  requires std::is_invocable_r_v<bool, Pred const &>
+void event_count::await(Pred const &condition) noexcept(std::is_nothrow_invocable_r_v<bool, Pred const &>) {
+  //
   if (std::invoke(condition)) {
     return;
   }
-
   // std::invoke(condition) is the only thing that may throw, everything else is
   // noexcept, so we can hoist the try/catch block outside of the loop
-  try {
+
+  LF_TRY {
     for (;;) {
       auto my_key = prepare_wait();
       if (std::invoke(condition)) {
@@ -240,10 +233,13 @@ void event_count::await(Pred const& condition) {
       }
       wait(my_key);
     }
-  } catch (...) {
+  }
+  LF_CATCH_ALL {
     cancel_wait();
-    throw;
+    LF_RETHROW;
   }
 }
 
-}  // namespace lf
+} // namespace ext
+
+} // namespace lf

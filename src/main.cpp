@@ -14,7 +14,7 @@
 
 #include <ThreadPool.h>
 #include <glm/gtc/type_ptr.hpp>
-#include <libfork/schedule/busy_pool.hpp>
+#include <libfork/schedule.hpp>
 
 constexpr uint32_t kFrameCount = 3;
 
@@ -155,7 +155,7 @@ template <typename Func> inline long ns(Func &&func) {
 	return std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count();
 }
 
-lf::busy_pool busy_pool(12);
+lf::busy_pool lf_pool(12);
 
 struct EditResult {
 	hashdag::NodePointer<uint32_t> node_ptr;
@@ -211,7 +211,7 @@ int main() {
 	auto sparse_binder = myvk::MakePtr<VkSparseBinder>(sparse_queue);
 
 	const auto edit = [&]<hashdag::Editor<uint32_t> Editor_T>(Editor_T &&editor) -> EditResult {
-		return dag_node_pool->ThreadedEdit(&busy_pool, dag_node_pool->GetRoot(), std::forward<Editor_T>(editor),
+		return dag_node_pool->ThreadedEdit(lf_pool, dag_node_pool->GetRoot(), std::forward<Editor_T>(editor),
 		                                   dag_color_pool->GetLeafLevel(),
 		                                   [&](hashdag::NodePointer<uint32_t> root_ptr, auto &&state) -> EditResult {
 			                                   if constexpr (requires { state.octree_node; })
@@ -232,7 +232,8 @@ int main() {
 		    .editor = std::forward<StatelessEditor_T>(editor)});
 	};
 	const auto gc = [&]() -> EditResult {
-		return {.node_ptr = dag_node_pool->ThreadedGC(&busy_pool, dag_node_pool->GetRoot()),
+		return {.node_ptr =
+		            dag_node_pool->GetRoot(), // dag_node_pool->ThreadedGC(&busy_pool, dag_node_pool->GetRoot()),
 		        .opt_color_ptr = std::nullopt};
 	};
 	const auto set_root = [&](const EditResult &edit_result) {
@@ -271,27 +272,28 @@ int main() {
 			    .color = {},
 			}));
 		});
-		printf("edit cost %lf ms\n", (double)edit_ns / 1000000.0);
+		printf("edit cost %f ms\n", (double)edit_ns / 1000000.0);
 		printf("root = %d\n", dag_color_pool->GetRoot().GetData());
 		auto flush_ns = ns([&]() { flush(); });
-		printf("flush cost %lf ms\n", (double)flush_ns / 1000000.0);
+		printf("flush cost %f ms\n", (double)flush_ns / 1000000.0);
 	}
 
 	const auto pop_edit_result = [&]() {
 		if (edit_future.valid() && edit_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
 			set_root(edit_future.get());
 	};
-	const auto push_edit = [&]<typename... Args>(auto &&edit_func, Args &&...args) {
+	const auto push_edit = [&]<typename EditFunc, typename... Args>(EditFunc &&edit_func, Args &&...args) {
 		if (edit_future.valid())
 			return;
-		edit_future = edit_pool.enqueue([&]() {
-			EditResult result;
-			auto edit_ns = ns([&]() { result = edit_func(std::forward<Args>(args)...); });
-			printf("edit cost %lf ms\n", (double)edit_ns / 1000000.0);
-			auto flush_ns = ns([&]() { flush(); });
-			printf("flush cost %lf ms\n", (double)flush_ns / 1000000.0);
-			return result;
-		});
+		edit_future = edit_pool.enqueue(
+		    [edit_func = std::forward<EditFunc>(edit_func), ... args = std::forward<Args>(args), &flush] {
+			    EditResult result;
+			    auto edit_ns = ns([&]() { result = edit_func(args...); });
+			    printf("edit cost %f ms\n", (double)edit_ns / 1000000.0);
+			    auto flush_ns = ns([&]() { flush(); });
+			    printf("flush cost %f ms\n", (double)flush_ns / 1000000.0);
+			    return result;
+		    });
 	};
 
 	auto camera = myvk::MakePtr<Camera>();
@@ -355,9 +357,9 @@ int main() {
 		ImGui::Checkbox("Paint", &paint);
 		if (ImGui::Button("GC")) {
 			auto gc_ns = ns([&]() { set_root(gc()); });
-			printf("GC cost %lf ms\n", (double)gc_ns / 1000000.0);
+			printf("GC cost %f ms\n", (double)gc_ns / 1000000.0);
 			auto flush_ns = ns([&]() { flush(); });
-			printf("flush cost %lf ms\n", (double)flush_ns / 1000000.0);
+			printf("flush cost %f ms\n", (double)flush_ns / 1000000.0);
 		}
 		ImGui::End();
 		ImGui::Render();

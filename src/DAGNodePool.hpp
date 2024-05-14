@@ -12,7 +12,7 @@
 
 #include <hashdag/NodePool.hpp>
 #include <hashdag/NodePoolThreadedEdit.hpp>
-#include <hashdag/NodePoolThreadedGC.hpp>
+// #include <hashdag/NodePoolThreadedGC.hpp>
 #include <hashdag/NodePoolTraversal.hpp>
 
 #include <myvk/Buffer.hpp>
@@ -28,12 +28,12 @@ template <typename K, typename V> using flat_hash_map = phmap::flat_hash_map<K, 
 template <typename K> using flat_hash_set = phmap::flat_hash_set<K>;
 } // namespace dag_phmap
 
-class DAGNodePool final
-    : public myvk::DeviceObjectBase,
-      public hashdag::NodePoolBase<DAGNodePool, uint32_t>,
-      public hashdag::NodePoolTraversal<DAGNodePool, uint32_t>,
-      public hashdag::NodePoolThreadedEdit<DAGNodePool, uint32_t>,
-      public hashdag::NodePoolThreadedGC<DAGNodePool, uint32_t, dag_phmap::flat_hash_map, dag_phmap::flat_hash_set> {
+class DAGNodePool final : public myvk::DeviceObjectBase,
+                          public hashdag::NodePoolBase<DAGNodePool, uint32_t>,
+                          public hashdag::NodePoolTraversal<DAGNodePool, uint32_t>,
+                          public hashdag::NodePoolThreadedEdit<DAGNodePool, uint32_t>
+// public hashdag::NodePoolThreadedGC<DAGNodePool, uint32_t, dag_phmap::flat_hash_map, dag_phmap::flat_hash_set>
+{
 public:
 	using WordSpanHasher = hashdag::MurmurHasher32;
 
@@ -58,9 +58,13 @@ private:
 	inline void SetBucketWords(uint32_t bucket_id, uint32_t words) {
 		m_bucket_words[bucket_id].store(words, std::memory_order_release);
 	}
-	inline const uint32_t *ReadPage(uint32_t page_id) const { return m_pages[page_id].get(); }
+	inline const uint32_t *ReadPage(uint32_t page_id) const {
+		std::atomic_thread_fence(std::memory_order_acquire);
+		return m_pages[page_id].get();
+	}
 	inline void ZeroPage(uint32_t page_id, uint32_t page_offset, uint32_t zero_words) {
 		std::fill(m_pages[page_id].get() + page_offset, m_pages[page_id].get() + page_offset + zero_words, 0);
+		std::atomic_thread_fence(std::memory_order_release);
 	}
 	inline void FreePage(uint32_t page_id) {
 		m_pages[page_id] = nullptr;
@@ -70,6 +74,8 @@ private:
 		if (!m_pages[page_id])
 			m_pages[page_id] = std::make_unique_for_overwrite<uint32_t[]>(GetConfig().GetWordsPerPage());
 		std::copy(word_span.begin(), word_span.end(), m_pages[page_id].get() + page_offset);
+		std::atomic_thread_fence(std::memory_order_release);
+
 		Range range = {page_offset, page_offset + (uint32_t)word_span.size()};
 		m_page_write_ranges.lazy_emplace_l(
 		    page_id, [&](auto &it) { it.second.Union(range); }, [&](const auto &ctor) { ctor(page_id, range); });

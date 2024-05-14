@@ -6,7 +6,7 @@ if(BUILD_TESTING)
   add_subdirectory(test)
 endif()
 
-option(BUILD_BENCHMARKS "Build the benchmarks" ${BUILD_TESTING})
+option(BUILD_BENCHMARKS "Build the benchmarks" OFF)
 
 if(BUILD_BENCHMARKS)
   include(cmake/benchmark.cmake)
@@ -16,6 +16,12 @@ option(BUILD_DOCS "Build documentation using Doxygen and Sphinx" OFF)
 
 if(BUILD_DOCS)
   add_subdirectory(docs)
+endif()
+
+option(BUILD_TOOLS "Build developer tools" OFF)
+
+if(BUILD_TOOLS)
+  add_subdirectory(tools)
 endif()
 
 option(ENABLE_COVERAGE "Enable coverage support separate from CTest's" OFF)
