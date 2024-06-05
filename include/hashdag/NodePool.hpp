@@ -83,7 +83,7 @@ public:
 	template <size_t NodeSpanExtent>
 	inline static NodePointer<Word> find_node_in_span(auto &&get_node_words, Word base, std::span<const Word> word_span,
 	                                                  std::span<const Word, NodeSpanExtent> node_span) {
-		for (auto iter = word_span.begin(); iter + node_span.size() <= word_span.end();) {
+		for (auto iter = word_span.begin(); node_span.size() <= word_span.end() - iter;) {
 			Word node_words = get_node_words(&(*iter));
 			if (node_words == 0)
 				break;
