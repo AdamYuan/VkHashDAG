@@ -60,11 +60,6 @@ private:
 		       ((l1 & 0x00FF0000u) == 0u ? 0u : 0x40u) | ((l1 & 0xFF000000u) == 0u ? 0u : 0x80u);
 	}
 
-	template <std::floating_point F> struct StackItem {
-		Word node;
-		F t_max;
-	};
-
 public:
 	inline NodePoolTraversal() { static_assert(std::is_base_of_v<NodePoolBase<Derived, Word>, Derived>); }
 
@@ -108,7 +103,7 @@ public:
 		static constexpr F kEpsilon = std::numeric_limits<F>::epsilon();
 		static constexpr std::size_t kStackSize = std::numeric_limits<F>::digits - 1; // Fraction bits
 
-		std::array<StackItem<F>, kStackSize + 1> stack;
+		std::array<Word, kStackSize> stack;
 
 		o += F{1};
 
@@ -153,7 +148,7 @@ public:
 
 		const Word kLeafScale = kStackSize - get_node_pool().m_config.GetNodeLevels();
 
-		while (scale < kStackSize) {
+		for (;;) {
 			if (child_bits == 0u)
 				child_bits = scale > kLeafScale ? *get_node_pool().read_node(parent)
 				                                : (scale == kLeafScale ? DAG_GetLeafFirstChildBits(parent) : parent);
@@ -168,42 +163,35 @@ public:
 
 			if ((child_bits & child_mask) != 0 && t_min <= t_max) {
 				// INTERSECT
-				F tv_max = glm::min(t_max, tc_max);
 				F half_scale_exp2 = scale_exp2 * 0.5;
 				Vec3 t_center = half_scale_exp2 * t_coef + t_corner;
 
-				if (t_min <= tv_max) {
-					if (scale < kLeafScale || scale == -1) // leaf node
-						break;
+				if (scale < kLeafScale || scale == -1) // leaf node
+					break;
 
-					// PUSH
-					if (tc_max < h) {
-						stack[scale].node = parent;
-						stack[scale].t_max = t_max;
-					}
-					h = tc_max;
+				// PUSH
+				if (tc_max < h)
+					stack[scale] = parent;
+				h = tc_max;
 
-					parent =
-					    scale > kLeafScale
-					        ? *get_node_pool().read_node(parent + 1u + std::popcount(child_bits & (child_mask - 1)))
-					        : 0xffu & (*get_node_pool().read_node(parent + (child_shift >> 2u)) >>
-					                   ((child_shift & 3u) << 3u));
+				parent = scale > kLeafScale
+				             ? *get_node_pool().read_node(parent + 1u + std::popcount(child_bits & (child_mask - 1)))
+				             : 0xffu & (*get_node_pool().read_node(parent + (child_shift >> 2u)) >>
+				                        ((child_shift & 3u) << 3u));
 
-					idx = 0u;
-					--scale;
-					scale_exp2 = half_scale_exp2;
-					if (t_center.x > t_min)
-						idx ^= 1u, pos.x += scale_exp2;
-					if (t_center.y > t_min)
-						idx ^= 2u, pos.y += scale_exp2;
-					if (t_center.z > t_min)
-						idx ^= 4u, pos.z += scale_exp2;
+				idx = 0u;
+				--scale;
+				scale_exp2 = half_scale_exp2;
+				if (t_center.x > t_min)
+					idx ^= 1u, pos.x += scale_exp2;
+				if (t_center.y > t_min)
+					idx ^= 2u, pos.y += scale_exp2;
+				if (t_center.z > t_min)
+					idx ^= 4u, pos.z += scale_exp2;
 
-					child_bits = 0;
-					t_max = tv_max;
+				child_bits = 0;
 
-					continue;
-				}
+				continue;
 			}
 
 			// ADVANCE
@@ -231,11 +219,12 @@ public:
 				if (step_mask & 4u)
 					differing_bits |= float_bits_to_word<F>(pos.z) ^ float_bits_to_word<F>(pos.z + scale_exp2);
 				scale = glm::findMSB(differing_bits);
+				if (scale >= kStackSize)
+					break;
 				scale_exp2 = fast_exp2<F>(scale - kStackSize);
 
 				// Restore parent voxel from the stack.
-				parent = stack[scale].node;
-				t_max = stack[scale].t_max;
+				parent = stack[scale];
 
 				// Round cube position and extract child slot index.
 				Word shx = float_bits_to_word<F>(pos.x) >> scale;

@@ -51,10 +51,7 @@ layout(push_constant) uniform uuPushConstant {
 
 // STACK_SIZE equals to the fraction bits of float
 #define STACK_SIZE 23
-struct StackItem {
-	uint node;
-	float t_max;
-} stack[STACK_SIZE + 1];
+uint stack[STACK_SIZE];
 
 uint DAG_GetLeafFirstChildBits(in const uint node) {
 	/* uvec2 l = uvec2(uDAGNodes[node], uDAGNodes[node + 1]);
@@ -128,7 +125,7 @@ bool DAG_RayMarch(in const uint root,
 
 	const uint leaf_scale = STACK_SIZE - leaf_level;
 
-	[[unroll]] while (scale < STACK_SIZE) {
+	for (;;) {
 		++iter;
 
 		if (child_bits == 0u)
@@ -145,40 +142,34 @@ bool DAG_RayMarch(in const uint root,
 
 		if ((child_bits & child_mask) != 0 && t_min <= t_max) {
 			// INTERSECT
-			float tv_max = min(t_max, tc_max);
 			float half_scale_exp2 = scale_exp2 * 0.5;
 			vec3 t_center = half_scale_exp2 * t_coef + t_corner;
 
-			if (t_min <= tv_max) {
-				if (scale < leaf_scale || scale_exp2 * proj_factor < tc_max + proj_bias)
-					break;
+			if (scale < leaf_scale || scale_exp2 * proj_factor < tc_max + proj_bias)
+				break;
 
-				// PUSH
-				if (tc_max < h) {
-					stack[scale].node = parent;
-					stack[scale].t_max = t_max;
-				}
-				h = tc_max;
+			// PUSH
+			if (tc_max < h)
+				stack[scale] = parent;
+			h = tc_max;
 
-				parent = scale > leaf_scale
-				             ? uDAGNodes[parent + 1 + bitCount(child_bits & (child_mask - 1))]
-				             : (uDAGNodes[parent + (child_shift >> 2u)] >> ((child_shift & 3u) << 3u)) & 0xFFu;
+			parent = scale > leaf_scale
+			             ? uDAGNodes[parent + 1 + bitCount(child_bits & (child_mask - 1))]
+			             : (uDAGNodes[parent + (child_shift >> 2u)] >> ((child_shift & 3u) << 3u)) & 0xFFu;
 
-				idx = 0u;
-				--scale;
-				scale_exp2 = half_scale_exp2;
-				if (t_center.x > t_min)
-					idx ^= 1u, pos.x += scale_exp2;
-				if (t_center.y > t_min)
-					idx ^= 2u, pos.y += scale_exp2;
-				if (t_center.z > t_min)
-					idx ^= 4u, pos.z += scale_exp2;
+			idx = 0u;
+			--scale;
+			scale_exp2 = half_scale_exp2;
+			if (t_center.x > t_min)
+				idx ^= 1u, pos.x += scale_exp2;
+			if (t_center.y > t_min)
+				idx ^= 2u, pos.y += scale_exp2;
+			if (t_center.z > t_min)
+				idx ^= 4u, pos.z += scale_exp2;
 
-				child_bits = 0;
-				t_max = tv_max;
+			child_bits = 0;
 
-				continue;
-			}
+			continue;
 		}
 
 		// ADVANCE
@@ -206,11 +197,12 @@ bool DAG_RayMarch(in const uint root,
 			if ((step_mask & 4u) != 0)
 				differing_bits |= floatBitsToUint(pos.z) ^ floatBitsToUint(pos.z + scale_exp2);
 			scale = findMSB(differing_bits);
+			if (scale >= STACK_SIZE)
+				break;
 			scale_exp2 = uintBitsToFloat((scale - STACK_SIZE + 127u) << 23u); // exp2f(scale - s_max)
 
 			// Restore parent voxel from the stack.
-			parent = stack[scale].node;
-			t_max = stack[scale].t_max;
+			parent = stack[scale];
 
 			// Round cube position and extract child slot index.
 			uint shx = floatBitsToUint(pos.x) >> scale;
