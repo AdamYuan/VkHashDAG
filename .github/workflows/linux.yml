@@ -33,7 +33,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install ninja-build xorg-dev gcc-13 g++-13
+          sudo apt-get install ninja-build xorg-dev gcc-14 g++-14
 
       - uses: humbletim/install-vulkan-sdk@v1.1.1
         with:
