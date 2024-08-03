@@ -9,7 +9,8 @@
 #include "NodePool.hpp"
 
 #include <algorithm>
-#include <libfork/core.hpp>
+#include <libfork/schedule/busy_pool.hpp>
+#include <libfork/task.hpp>
 #include <vector>
 
 namespace hashdag {
@@ -25,8 +26,9 @@ private:
 	inline const Config<Word> &get_config() const { return get_node_pool().m_config; }
 	inline Word get_bucket_base(Word level) const { return get_node_pool().m_bucket_level_bases[level]; }
 
-	inline lf::task<void> lf_gc_tag_node(Word level, std::span<std::vector<Word>> src_bucket_nodes,
-	                                     std::span<HashSet<Word>> worker_node_sets) {
+	template <lf::context Context>
+	inline lf::basic_task<void, Context> lf_gc_tag_node(Word level, std::span<std::vector<Word>> src_bucket_nodes,
+	                                                    std::span<HashSet<Word>> worker_node_sets) {
 		auto context = co_await lf::get_context();
 		HashSet<Word> &worker_node_set = worker_node_sets[context->get_worker_id()];
 

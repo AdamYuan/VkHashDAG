@@ -62,12 +62,7 @@ target_link_libraries(VkHashDAG PRIVATE
         phmap::phmap
         shader
 )
-if (CMAKE_BUILD_TYPE STREQUAL "Release")
-    target_compile_options(VkHashDAG PRIVATE -fno-exceptions) # TODO: Make it portable
-else ()
-    target_compile_options(VkHashDAG PRIVATE -fsanitize=address)
-    target_link_options(VkHashDAG PRIVATE -fsanitize=address)
-endif ()
+target_compile_options(VkHashDAG PRIVATE -fno-exceptions) # TODO: Make it portable
 
 install(TARGETS VkHashDAG RUNTIME DESTINATION)
 

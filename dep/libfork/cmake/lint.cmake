@@ -7,11 +7,17 @@ macro(default name)
 endmacro()
 
 default(FORMAT_COMMAND clang-format)
-default(PATTERNS source/*.cpp source/*.hpp include/*.hpp test/*.cpp test/*.hpp)
+default(
+  PATTERNS
+  source/*.cpp source/*.hpp
+  include/*.hpp
+  test/*.cpp test/*.hpp
+)
 default(FIX NO)
 
 set(flag --output-replacements-xml)
 set(args OUTPUT_VARIABLE output)
+
 if(FIX)
   set(flag -i)
   set(args "")
@@ -26,15 +32,19 @@ foreach(file IN LISTS files)
   execute_process(
     COMMAND "${FORMAT_COMMAND}" --style=file "${flag}" "${file}"
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-    RESULT_VARIABLE result ${args}
+    RESULT_VARIABLE result
+    ${args}
   )
+
   if(NOT result EQUAL "0")
     message(FATAL_ERROR "'${file}': formatter returned with ${result}")
   endif()
+
   if(NOT FIX AND output MATCHES "\n<replacement offset")
     string(SUBSTRING "${file}" "${path_prefix_length}" -1 relative_file)
     list(APPEND badly_formatted "${relative_file}")
   endif()
+
   set(output "")
 endforeach()
 

@@ -10,6 +10,7 @@ default(SPELL_COMMAND codespell)
 default(FIX NO)
 
 set(flag "")
+
 if(FIX)
   set(flag -w)
 endif()
