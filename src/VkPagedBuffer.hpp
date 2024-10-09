@@ -28,6 +28,7 @@ private:
 	myvk::Ptr<myvk::Device> m_device_ptr;
 	VkMemoryRequirements m_page_memory_requirements{};
 	std::vector<Page> m_pages;
+	std::size_t m_exist_page_total{};
 
 public:
 	inline const myvk::Ptr<myvk::Device> &GetDevicePtr() const override { return m_device_ptr; }
@@ -35,6 +36,7 @@ public:
 	~VkPagedBuffer() override;
 
 	inline uint32_t GetPageTotal() const { return m_pages.size(); }
+	inline uint32_t GetExistPageTotal() const { return m_exist_page_total; }
 	inline const VkMemoryRequirements &GetPageMemoryRequirements() const { return m_page_memory_requirements; }
 	inline VkDeviceSize GetPageSize() const { return m_page_memory_requirements.size; }
 
@@ -98,6 +100,7 @@ public:
 		if (page_ids.empty())
 			return;
 
+		m_exist_page_total += page_ids.size();
 		std::vector<VmaAllocation> allocations(page_ids.size());
 		std::vector<VmaAllocationInfo> allocation_infos(page_ids.size());
 
@@ -140,6 +143,7 @@ public:
 		if (page_ids.empty())
 			return;
 
+		m_exist_page_total -= page_ids.size();
 		std::vector<VkSparseMemoryBind> sparse_memory_binds;
 		sparse_memory_binds.reserve(page_ids.size());
 

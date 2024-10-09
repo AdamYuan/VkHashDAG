@@ -375,6 +375,13 @@ int main() {
 			auto flush_ns = ns([&]() { flush(); });
 			printf("flush cost %lf ms\n", (double)flush_ns / 1000000.0);
 		}
+		const auto imgui_paged_buffer_info = [](const char *name, const myvk::Ptr<VkPagedBuffer> &buffer) {
+			ImGui::Text("%s: %u / %u Page, %.2lf MiB", name, buffer->GetExistPageTotal(), buffer->GetPageTotal(),
+			            double(buffer->GetExistPageTotal() * buffer->GetPageSize()) / 1024.0 / 1024.0);
+		};
+		imgui_paged_buffer_info("Node", dag_node_pool->GetBuffer());
+		imgui_paged_buffer_info("Color Node", dag_color_pool->GetNodeBuffer());
+		imgui_paged_buffer_info("Color Leaf", dag_color_pool->GetLeafBuffer());
 		ImGui::End();
 		ImGui::Render();
 
