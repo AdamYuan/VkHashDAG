@@ -340,6 +340,22 @@ int main() {
 						                        .r2 = r2,
 						                        .color = hashdag::VBRColor{color},
 						                    });
+
+					// A Simple Test for Weighted VBR Color
+					/* if (paint)
+					    push_edit(vbr_edit, SphereEditor<EditMode::kPaint>{
+					                            .center = up,
+					                            .r2 = r2,
+					                            .color = hashdag::VBRColor{hashdag::R5G6B5Color{color},
+					                                                       hashdag::R5G6B5Color{}, 1u, 2u},
+					                        });
+					else
+					    push_edit(vbr_edit, SphereEditor<EditMode::kFill>{
+					                            .center = up,
+					                            .r2 = r2,
+					                            .color = hashdag::VBRColor{hashdag::R5G6B5Color{color},
+					                                                       hashdag::R5G6B5Color{}, 0u, 2u},
+					                        }); */
 				}
 			}
 		}

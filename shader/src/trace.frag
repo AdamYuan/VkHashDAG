@@ -284,6 +284,22 @@ uvec2 Color_GetU2(in const uint ofst, in const uint idx) {
 }
 uint Color_GetU2_x(in const uint ofst, in const uint idx) { return uColorLeaves[ofst + (idx << 1u)]; }
 uint Color_GetU2_y(in const uint ofst, in const uint idx) { return uColorLeaves[(ofst + (idx << 1u)) | 1u]; }
+uint Color_GetWeight(in const uint ofst, in const uint bit_idx, in const uint bits_per_weight) {
+	uint bit_ofst = bit_idx & 31u;
+	bool single = bit_ofst + bits_per_weight <= 32; // Is the weight in a single word?
+	uint w0 = uColorLeaves[ofst + (bit_idx >> 5u)] >> bit_ofst;
+	if (single) {
+		w0 &= (1u << bits_per_weight) - 1u;
+		return w0;
+	}
+	uint w1 = uColorLeaves[ofst + (bit_idx >> 5u) + 1u];
+	w1 &= (1u << (bit_ofst + bits_per_weight - 32u)) - 1u;
+	return w0 | (w1 << (32u - bit_ofst));
+}
+vec3 Color_UnpackRGB565(in const uint c) {
+	uvec3 c3 = (uvec3(c) >> uvec3(0u, 5u, 11u)) & uvec3(0x1Fu, 0x3Fu, 0x1Fu);
+	return vec3(c3) / vec3(0x1Fu, 0x3Fu, 0x1Fu);
+}
 
 vec3 Color_GetLeafColor(in const uint idx, in const uvec3 vox_pos) {
 	uint macro_cnt = uColorLeaves[idx + 1u], block_cnt = uColorLeaves[idx + 2u];
@@ -326,9 +342,10 @@ vec3 Color_GetLeafColor(in const uint idx, in const uvec3 vox_pos) {
 	vox_id -= (block.y >> 18u);
 	uint bit_id = macro.y + (block.y & 0xFFFFu) + vox_id * bits_per_weight;
 
-	// TODO: Read Weight Bits and Decode VBR Color
-
-	return vec3(0);
+	// Read Weight Bits and Decode VBR Color
+	uint weight = Color_GetWeight(weight_offset, bit_id, bits_per_weight);
+	float alpha = float(weight) / float((1u << bits_per_weight) - 1u);
+	return mix(Color_UnpackRGB565(block.x), Color_UnpackRGB565(block.x >> 16u), alpha);
 }
 
 vec3 Color_Fetch(in const uint root, in const uint voxel_level, in const uint leaf_level, in const uvec3 vox_pos) {
