@@ -38,7 +38,7 @@ public:
 	using WordSpanHasher = hashdag::MurmurHasher32;
 
 private:
-	std::unique_ptr<std::atomic_uint32_t[]> m_bucket_words;
+	std::unique_ptr<uint32_t[]> m_bucket_words;
 	std::unique_ptr<std::unique_ptr<uint32_t[]>[]> m_pages;
 	std::array<std::mutex, 1024> m_edit_mutexes{};
 	phmap::parallel_flat_hash_map<uint32_t, Range<uint32_t>, std::hash<uint32_t>, std::equal_to<>,
@@ -51,13 +51,8 @@ private:
 	// Functions for hashdag::NodePoolBase
 	friend class hashdag::NodePoolBase<DAGNodePool, uint32_t>;
 
-	inline std::mutex &GetBucketMutex(uint32_t bucket_id) { return m_edit_mutexes[bucket_id % m_edit_mutexes.size()]; }
-	inline uint32_t GetBucketWords(uint32_t bucket_id) const {
-		return m_bucket_words[bucket_id].load(std::memory_order_acquire);
-	}
-	inline void SetBucketWords(uint32_t bucket_id, uint32_t words) {
-		m_bucket_words[bucket_id].store(words, std::memory_order_release);
-	}
+	inline std::mutex &GetBucketRefMutex(uint32_t bucket_id) { return m_edit_mutexes[bucket_id % m_edit_mutexes.size()]; }
+	inline uint32_t &GetBucketRefWords(uint32_t bucket_id) { return m_bucket_words[bucket_id]; }
 	inline const uint32_t *ReadPage(uint32_t page_id) const { return m_pages[page_id].get(); }
 	inline void ZeroPage(uint32_t page_id, uint32_t page_offset, uint32_t zero_words) {
 		std::fill(m_pages[page_id].get() + page_offset, m_pages[page_id].get() + page_offset + zero_words, 0);
@@ -84,7 +79,7 @@ private:
 public:
 	inline DAGNodePool(const hashdag::Config<uint32_t> &config, myvk::Ptr<VkPagedBuffer> buffer)
 	    : hashdag::NodePoolBase<DAGNodePool, uint32_t>(config), m_buffer{std::move(buffer)} {
-		m_bucket_words = std::make_unique<std::atomic_uint32_t[]>(GetConfig().GetTotalBuckets());
+		m_bucket_words = std::make_unique<uint32_t[]>(GetConfig().GetTotalBuckets());
 		m_pages = std::make_unique<std::unique_ptr<uint32_t[]>[]>(GetConfig().GetTotalPages());
 	}
 	static myvk::Ptr<DAGNodePool> Create(hashdag::Config<uint32_t> config,

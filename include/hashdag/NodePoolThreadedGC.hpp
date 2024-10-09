@@ -53,7 +53,7 @@ private:
 						worker_node_set.insert(child);
 						Word child_bucket = child >> get_config().GetWordBitsPerBucket();
 
-						std::scoped_lock lock{get_node_pool().get_bucket_mutex(child_bucket)};
+						std::scoped_lock lock{get_node_pool().get_bucket_ref_mutex(child_bucket)};
 						m_bucket_nodes[child_bucket].push_back(child);
 					}
 				}
@@ -150,7 +150,7 @@ private:
 				// Write to bucket cache
 				Word new_node;
 				{
-					std::unique_lock lock{get_node_pool().get_bucket_mutex(new_bucket)};
+					std::unique_lock lock{get_node_pool().get_bucket_ref_mutex(new_bucket)};
 
 					std::vector<Word> &bucket_cache = m_bucket_caches[new_bucket - bucket_base];
 					Word bucket_cache_offset = bucket_cache.size();
@@ -214,8 +214,9 @@ private:
 				    page_index, 0,
 				    std::span<const Word>{bucket_cache.begin() + bucket_cache_offset, bucket_cache.end()});
 
-			Word prev_bucket_words = get_node_pool().get_bucket_words(bucket);
-			get_node_pool().set_bucket_words(bucket, bucket_cache.size());
+			Word &ref_bucket_words = get_node_pool().get_bucket_ref_words(bucket);
+			Word prev_bucket_words = ref_bucket_words;
+			ref_bucket_words = bucket_cache.size();
 			gc_bucket_free_pages(bucket, bucket_cache.size(), prev_bucket_words);
 
 			++bucket;
@@ -235,7 +236,8 @@ private:
 
 		// Leaf's hash won't change, so the bucket index remains
 		for (std::vector<Word> &nodes : bucket_nodes) {
-			Word prev_bucket_words = get_node_pool().get_bucket_words(bucket);
+			Word &ref_bucket_words = get_node_pool().get_bucket_ref_words(bucket);
+			Word prev_bucket_words = ref_bucket_words; // Read bucket_words
 			Word new_bucket_words = 0;
 
 			if (!nodes.empty()) {
@@ -260,7 +262,7 @@ private:
 				}
 			}
 
-			get_node_pool().set_bucket_words(bucket, new_bucket_words);
+			ref_bucket_words = new_bucket_words; // Write bucket_words
 			gc_bucket_free_pages(bucket, new_bucket_words, prev_bucket_words);
 
 			++bucket;
