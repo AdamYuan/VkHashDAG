@@ -166,6 +166,9 @@ public:
 		Word &ref_bucket_words = get_bucket_ref_words(bucket_index);
 
 		if constexpr (ThreadSafe) {
+			static_assert(std::atomic_ref<Word>::is_always_lock_free &&
+			              std::atomic_ref<Word>::required_alignment == alignof(Word));
+
 			std::atomic_ref<Word> atomic_ref_bucket_words{ref_bucket_words};
 			Word shared_bucket_words = atomic_ref_bucket_words.load(std::memory_order_acquire); // Acquire
 			{
