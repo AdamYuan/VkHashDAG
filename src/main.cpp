@@ -13,6 +13,7 @@
 #include "rg/DAGRenderGraph.hpp"
 
 #include <ThreadPool.h>
+#include <chrono>
 #include <glm/gtc/type_ptr.hpp>
 #include <libfork/schedule/busy_pool.hpp>
 
