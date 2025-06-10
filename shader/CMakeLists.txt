@@ -7,6 +7,9 @@ add_library(shader INTERFACE)
 target_include_directories(shader INTERFACE include)
 
 function(add_shader INPUT_FILE OUTPUT_FILE OPTION)
+    # 确保输出目录存在
+    set(OUTPUT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include/shader")
+    file(MAKE_DIRECTORY ${OUTPUT_DIR})  # 创建目录
     add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/include/shader/${OUTPUT_FILE}
             COMMAND ${GLSLC} src/${INPUT_FILE} -o include/shader/${OUTPUT_FILE} -mfmt=num --target-env=vulkan1.3 ${OPTION}
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
