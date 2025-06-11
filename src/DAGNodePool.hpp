@@ -51,10 +51,9 @@ private:
 	// Functions for hashdag::NodePoolBase
 	friend class hashdag::NodePoolBase<DAGNodePool, uint32_t>;
 
-	inline std::mutex &GetBucketRefMutex(uint32_t bucket_id) { return m_edit_mutexes[bucket_id % m_edit_mutexes.size()]; }
-
 public:
 	// NodePool concept interface - must be public for concept checking
+	inline std::mutex& GetBucketRefMutex(uint32_t bucket_id) { return m_edit_mutexes[bucket_id % m_edit_mutexes.size()]; }
 	inline uint32_t &GetBucketRefWords(uint32_t bucket_id) { return m_bucket_words[bucket_id]; }
 	inline const uint32_t *ReadPage(uint32_t page_id) const { return m_pages[page_id].get(); }
 	inline void ZeroPage(uint32_t page_id, uint32_t page_offset, uint32_t zero_words) {
@@ -69,12 +68,12 @@ public:
 		    page_id, [&](auto &it) { it.second.Union(range); }, [&](const auto &ctor) { ctor(page_id, range); });
 	}
 
-private:
 	inline void FreePage(uint32_t page_id) {
 		m_pages[page_id] = nullptr;
 		m_page_frees.insert(page_id);
 	}
 
+private:
 	// Root
 	hashdag::NodePointer<uint32_t> m_root{};
 
