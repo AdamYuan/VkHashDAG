@@ -52,14 +52,13 @@ private:
 	friend class hashdag::NodePoolBase<DAGNodePool, uint32_t>;
 
 	inline std::mutex &GetBucketRefMutex(uint32_t bucket_id) { return m_edit_mutexes[bucket_id % m_edit_mutexes.size()]; }
+
+public:
+	// NodePool concept interface - must be public for concept checking
 	inline uint32_t &GetBucketRefWords(uint32_t bucket_id) { return m_bucket_words[bucket_id]; }
 	inline const uint32_t *ReadPage(uint32_t page_id) const { return m_pages[page_id].get(); }
 	inline void ZeroPage(uint32_t page_id, uint32_t page_offset, uint32_t zero_words) {
 		std::fill(m_pages[page_id].get() + page_offset, m_pages[page_id].get() + page_offset + zero_words, 0);
-	}
-	inline void FreePage(uint32_t page_id) {
-		m_pages[page_id] = nullptr;
-		m_page_frees.insert(page_id);
 	}
 	inline void WritePage(uint32_t page_id, uint32_t page_offset, std::span<const uint32_t> word_span) {
 		if (!m_pages[page_id])
@@ -68,6 +67,12 @@ private:
 		Range range = {page_offset, page_offset + (uint32_t)word_span.size()};
 		m_page_write_ranges.lazy_emplace_l(
 		    page_id, [&](auto &it) { it.second.Union(range); }, [&](const auto &ctor) { ctor(page_id, range); });
+	}
+
+private:
+	inline void FreePage(uint32_t page_id) {
+		m_pages[page_id] = nullptr;
+		m_page_frees.insert(page_id);
 	}
 
 	// Root
