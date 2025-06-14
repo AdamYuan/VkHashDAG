@@ -10,11 +10,10 @@ class ShaderModule : public DeviceObjectBase {
 private:
 	Ptr<Device> m_device_ptr;
 	VkShaderModule m_shader_module{VK_NULL_HANDLE};
-	VkShaderStageFlagBits m_stage;
 
 	std::vector<uint32_t> m_specialization_data;
 	std::vector<VkSpecializationMapEntry> m_specialization_entries;
-	mutable VkSpecializationInfo m_specialization_info;
+	mutable VkSpecializationInfo m_specialization_info{};
 
 	/* uint32_t spec_data[] = {m_tile_size, m_subgroup_size, m_shared_size};
 	VkSpecializationMapEntry spec_entries[] = {
@@ -27,7 +26,6 @@ private:
 public:
 	static Ptr<ShaderModule> Create(const Ptr<Device> &device, const uint32_t *code, uint32_t code_size);
 
-	VkShaderStageFlagBits GetStage() const { return m_stage; }
 	VkShaderModule GetHandle() const { return m_shader_module; }
 
 	template <typename T> inline void AddSpecialization(uint32_t constant_id, T value) {
@@ -48,7 +46,8 @@ public:
 
 	const Ptr<Device> &GetDevicePtr() const override { return m_device_ptr; }
 
-	VkPipelineShaderStageCreateInfo GetPipelineShaderStageCreateInfo(VkShaderStageFlagBits stage) const;
+	VkPipelineShaderStageCreateInfo GetPipelineShaderStageCreateInfo(VkShaderStageFlagBits stage,
+	                                                                 VkPipelineShaderStageCreateFlags flags = 0) const;
 
 	~ShaderModule() override;
 };

@@ -55,4 +55,9 @@ VkResult QueryPool::GetResults64(uint64_t *data, VkQueryResultFlags flags) const
 VkResult QueryPool::GetResults32(uint32_t *data, VkQueryResultFlags flags) const {
 	return GetResults32(0, m_count, data, flags);
 }
+
+void QueryPool::Reset(uint32_t first_query, uint32_t query_count) const {
+	vkResetQueryPool(GetDevicePtr()->GetHandle(), m_query_pool, first_query, query_count);
+}
+
 } // namespace myvk

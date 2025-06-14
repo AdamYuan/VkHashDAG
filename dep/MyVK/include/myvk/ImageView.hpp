@@ -4,7 +4,7 @@
 #include "DeviceObjectBase.hpp"
 #include "ImageBase.hpp"
 #include "SwapchainImage.hpp"
-#include "volk.h"
+#include "SyncHelper.hpp"
 #include <memory>
 
 namespace myvk {
@@ -12,7 +12,7 @@ class ImageView : public DeviceObjectBase {
 private:
 	Ptr<ImageBase> m_image_ptr;
 
-	VkImageSubresourceRange m_subresource_range;
+	VkImageSubresourceRange m_subresource_range{};
 	VkImageView m_image_view{VK_NULL_HANDLE};
 
 public:
@@ -42,12 +42,19 @@ public:
 	const VkImageSubresourceRange &GetSubresourceRange() const { return m_subresource_range; }
 	VkImageView GetHandle() const { return m_image_view; }
 
-	VkImageMemoryBarrier GetMemoryBarrier(VkImageAspectFlags aspect_mask, VkAccessFlags src_access_mask,
-	                                      VkAccessFlags dst_access_mask, VkImageLayout old_layout,
-	                                      VkImageLayout new_layout, uint32_t src_queue_family = VK_QUEUE_FAMILY_IGNORED,
+	VkImageMemoryBarrier GetMemoryBarrier(VkAccessFlags src_access_mask, VkAccessFlags dst_access_mask,
+	                                      VkImageLayout old_layout, VkImageLayout new_layout,
+	                                      uint32_t src_queue_family = VK_QUEUE_FAMILY_IGNORED,
 	                                      uint32_t dst_queue_family = VK_QUEUE_FAMILY_IGNORED) const {
 		return m_image_ptr->GetMemoryBarrier(m_subresource_range, src_access_mask, dst_access_mask, old_layout,
 		                                     new_layout, src_queue_family, dst_queue_family);
+	}
+
+	VkImageMemoryBarrier2 GetMemoryBarrier2(const ImageSyncState &src_sync_state, const ImageSyncState &dst_sync_state,
+	                                        uint32_t src_queue_family = VK_QUEUE_FAMILY_IGNORED,
+	                                        uint32_t dst_queue_family = VK_QUEUE_FAMILY_IGNORED) const {
+		return m_image_ptr->GetMemoryBarrier2(m_subresource_range, src_sync_state, dst_sync_state, src_queue_family,
+		                                      dst_queue_family);
 	}
 
 	inline VkFramebufferAttachmentImageInfo GetFramebufferAttachmentImageInfo() const {

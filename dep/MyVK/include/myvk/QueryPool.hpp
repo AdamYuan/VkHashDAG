@@ -25,6 +25,8 @@ public:
 	VkResult GetResults32(uint32_t first_query, uint32_t query_count, uint32_t *data, VkQueryResultFlags flags) const;
 	VkResult GetResults32(uint32_t *data, VkQueryResultFlags flags) const;
 
+	void Reset(uint32_t first_query, uint32_t query_count) const;
+
 	VkQueryPool GetHandle() const { return m_query_pool; }
 
 	uint32_t GetCount() const { return m_count; }

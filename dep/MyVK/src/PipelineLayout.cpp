@@ -7,6 +7,7 @@ Ptr<PipelineLayout> PipelineLayout::Create(const Ptr<Device> &device,
                                            const std::vector<VkPushConstantRange> &push_constant_ranges) {
 	auto ret = std::make_shared<PipelineLayout>();
 	ret->m_device_ptr = device;
+	ret->m_descriptor_layout_ptrs = descriptor_layouts;
 
 	VkPipelineLayoutCreateInfo info = {};
 	info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;

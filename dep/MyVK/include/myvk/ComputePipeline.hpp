@@ -11,6 +11,9 @@ public:
 	                                   const VkComputePipelineCreateInfo &create_info);
 
 	static Ptr<ComputePipeline> Create(const Ptr<PipelineLayout> &pipeline_layout,
+	                                   const VkPipelineShaderStageCreateInfo &shader_stage_create_info);
+
+	static Ptr<ComputePipeline> Create(const Ptr<PipelineLayout> &pipeline_layout,
 	                                   const Ptr<ShaderModule> &shader_module);
 
 	VkPipelineBindPoint GetBindPoint() const override { return VK_PIPELINE_BIND_POINT_COMPUTE; }

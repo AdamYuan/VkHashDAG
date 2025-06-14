@@ -87,6 +87,9 @@ public:
 	void CmdPushConstants(const Ptr<PipelineLayout> &pipeline_layout, VkShaderStageFlags shader_stage, uint32_t offset,
 	                      uint32_t size, const void *data) const;
 
+	void CmdPushDescriptorSet(const Ptr<PipelineLayout> &pipeline_layout, VkPipelineBindPoint pipeline_bind_point,
+	                          uint32_t set, const std::vector<DescriptorSetWrite> &writes) const;
+
 	void CmdCopy(const Ptr<BufferBase> &src, const Ptr<BufferBase> &dst,
 	             const std::vector<VkBufferCopy> &regions) const;
 
@@ -130,6 +133,11 @@ public:
 	                        const std::vector<VkMemoryBarrier> &memory_barriers,
 	                        const std::vector<VkBufferMemoryBarrier> &buffer_memory_barriers,
 	                        const std::vector<VkImageMemoryBarrier> &image_memory_barriers) const;
+
+	void CmdPipelineBarrier2(const std::vector<VkMemoryBarrier2> &memory_barriers,
+	                         const std::vector<VkBufferMemoryBarrier2> &buffer_memory_barriers,
+	                         const std::vector<VkImageMemoryBarrier2> &image_memory_barriers,
+	                         VkDependencyFlags dependency_flags = 0) const;
 
 	void CmdBlitImage(const Ptr<ImageBase> &src, const Ptr<ImageBase> &dst, const VkImageBlit &blit,
 	                  VkFilter filter) const;

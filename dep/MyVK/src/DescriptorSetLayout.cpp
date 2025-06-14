@@ -3,7 +3,8 @@
 
 namespace myvk {
 Ptr<DescriptorSetLayout> DescriptorSetLayout::Create(const Ptr<Device> &device,
-                                                     const std::vector<VkDescriptorSetLayoutBinding> &bindings) {
+                                                     const std::vector<VkDescriptorSetLayoutBinding> &bindings,
+                                                     VkDescriptorSetLayoutCreateFlags flags) {
 	auto ret = std::make_shared<DescriptorSetLayout>();
 	ret->m_device_ptr = device;
 
@@ -11,6 +12,7 @@ Ptr<DescriptorSetLayout> DescriptorSetLayout::Create(const Ptr<Device> &device,
 	info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 	info.bindingCount = bindings.size();
 	info.pBindings = bindings.data();
+	info.flags = flags;
 
 	if (vkCreateDescriptorSetLayout(device->GetHandle(), &info, nullptr, &ret->m_descriptor_set_layout) != VK_SUCCESS)
 		return nullptr;

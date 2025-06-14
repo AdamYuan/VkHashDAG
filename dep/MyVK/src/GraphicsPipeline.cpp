@@ -2,6 +2,21 @@
 
 namespace myvk {
 
+std::vector<VkPipelineShaderStageCreateInfo> GraphicsPipelineShaderModules::GetShaderStages() const {
+	std::vector<VkPipelineShaderStageCreateInfo> shader_stages;
+	if (vert)
+		shader_stages.push_back(vert->GetPipelineShaderStageCreateInfo(VK_SHADER_STAGE_VERTEX_BIT));
+	if (tesc)
+		shader_stages.push_back(tesc->GetPipelineShaderStageCreateInfo(VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT));
+	if (tese)
+		shader_stages.push_back(tese->GetPipelineShaderStageCreateInfo(VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT));
+	if (geom)
+		shader_stages.push_back(geom->GetPipelineShaderStageCreateInfo(VK_SHADER_STAGE_GEOMETRY_BIT));
+	if (frag)
+		shader_stages.push_back(frag->GetPipelineShaderStageCreateInfo(VK_SHADER_STAGE_FRAGMENT_BIT));
+	return shader_stages;
+}
+
 Ptr<GraphicsPipeline> GraphicsPipeline::Create(const Ptr<PipelineLayout> &pipeline_layout,
                                                const Ptr<RenderPass> &render_pass,
                                                const VkGraphicsPipelineCreateInfo &create_info) {
@@ -42,6 +57,13 @@ Ptr<GraphicsPipeline> GraphicsPipeline::Create(const Ptr<PipelineLayout> &pipeli
 		return nullptr;
 	return ret;
 }
+Ptr<GraphicsPipeline> GraphicsPipeline::Create(const Ptr<PipelineLayout> &pipeline_layout,
+                                               const Ptr<RenderPass> &render_pass,
+                                               const GraphicsPipelineShaderModules &shader_modules,
+                                               const GraphicsPipelineState &pipeline_state, uint32_t subpass) {
+	return Create(pipeline_layout, render_pass, shader_modules.GetShaderStages(), pipeline_state, subpass);
+}
+
 void GraphicsPipelineState::RasterizationState::Initialize(VkPolygonMode polygon_mode, VkFrontFace front_face,
                                                            VkCullModeFlags cull_mode) {
 	m_create_info.polygonMode = polygon_mode;

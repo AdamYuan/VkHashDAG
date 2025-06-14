@@ -16,7 +16,8 @@ private:
 
 public:
 	static Ptr<DescriptorSetLayout> Create(const Ptr<Device> &device,
-	                                       const std::vector<VkDescriptorSetLayoutBinding> &bindings);
+	                                       const std::vector<VkDescriptorSetLayoutBinding> &bindings,
+	                                       VkDescriptorSetLayoutCreateFlags flags = 0);
 	static Ptr<DescriptorSetLayout> Create(const Ptr<Device> &device, const DescriptorBindingFlagGroup &binding_flags);
 
 	VkDescriptorSetLayout GetHandle() const { return m_descriptor_set_layout; }

@@ -27,10 +27,9 @@ VmaAllocator Allocator::CreateHandle(const Ptr<Device> &device_ptr, const VmaAll
 	    vkCmdCopyBuffer,
 #if VMA_DEDICATED_ALLOCATION || VMA_VULKAN_VERSION >= 1001000
 	    /// Fetch "vkGetBufferMemoryRequirements2" on Vulkan >= 1.1, fetch "vkGetBufferMemoryRequirements2KHR" when
-	    /// using
-	    /// VK_KHR_dedicated_allocation extension.
+	    /// using VK_KHR_dedicated_allocation extension.
 	    vkGetBufferMemoryRequirements2KHR,
-	    /// Fetch "vkGetImageMemoryRequirements 2" on Vulkan >= 1.1, fetch "vkGetImageMemoryRequirements2KHR" when using
+	    /// Fetch "vkGetImageMemoryRequirements2" on Vulkan >= 1.1, fetch "vkGetImageMemoryRequirements2KHR" when using
 	    /// VK_KHR_dedicated_allocation extension.
 	    vkGetImageMemoryRequirements2KHR,
 #endif
@@ -43,15 +42,22 @@ VmaAllocator Allocator::CreateHandle(const Ptr<Device> &device_ptr, const VmaAll
 	    vkBindImageMemory2KHR,
 #endif
 #if VMA_MEMORY_BUDGET || VMA_VULKAN_VERSION >= 1001000
+	    /// Fetch from "vkGetPhysicalDeviceMemoryProperties2" on Vulkan >= 1.1, but you can also fetch it from
+	    /// "vkGetPhysicalDeviceMemoryProperties2KHR" if you enabled extension VK_KHR_get_physical_device_properties2.
 	    vkGetPhysicalDeviceMemoryProperties2KHR,
 #endif
-#if VMA_VULKAN_VERSION >= 1003000
+#if VMA_KHR_MAINTENANCE4 || VMA_VULKAN_VERSION >= 1003000
 	    /// Fetch from "vkGetDeviceBufferMemoryRequirements" on Vulkan >= 1.3, but you can also fetch it from
 	    /// "vkGetDeviceBufferMemoryRequirementsKHR" if you enabled extension VK_KHR_maintenance4.
 	    vkGetDeviceBufferMemoryRequirements,
 	    /// Fetch from "vkGetDeviceImageMemoryRequirements" on Vulkan >= 1.3, but you can also fetch it from
 	    /// "vkGetDeviceImageMemoryRequirementsKHR" if you enabled extension VK_KHR_maintenance4.
 	    vkGetDeviceImageMemoryRequirements,
+#endif
+#if VMA_EXTERNAL_MEMORY_WIN32
+	    vkGetMemoryWin32HandleKHR,
+#else
+	    nullptr,
 #endif
 	};
 

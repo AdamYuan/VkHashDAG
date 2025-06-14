@@ -3,6 +3,7 @@
 
 #include "PipelineBase.hpp"
 #include "RenderPass.hpp"
+#include "ShaderModule.hpp"
 
 #include <memory>
 #include <vector>
@@ -10,6 +11,12 @@
 namespace myvk {
 
 struct GraphicsPipelineState;
+
+struct GraphicsPipelineShaderModules {
+	Ptr<ShaderModule> vert, tesc, tese, geom, frag;
+	std::vector<VkPipelineShaderStageCreateInfo> GetShaderStages() const;
+};
+
 class GraphicsPipeline : public PipelineBase {
 private:
 	Ptr<RenderPass> m_render_pass_ptr;
@@ -17,6 +24,9 @@ private:
 public:
 	static Ptr<GraphicsPipeline> Create(const Ptr<PipelineLayout> &pipeline_layout, const Ptr<RenderPass> &render_pass,
 	                                    const std::vector<VkPipelineShaderStageCreateInfo> &shader_stages,
+	                                    const GraphicsPipelineState &pipeline_state, uint32_t subpass);
+	static Ptr<GraphicsPipeline> Create(const Ptr<PipelineLayout> &pipeline_layout, const Ptr<RenderPass> &render_pass,
+	                                    const GraphicsPipelineShaderModules &shader_modules,
 	                                    const GraphicsPipelineState &pipeline_state, uint32_t subpass);
 	static Ptr<GraphicsPipeline> Create(const Ptr<PipelineLayout> &pipeline_layout, const Ptr<RenderPass> &render_pass,
 	                                    const VkGraphicsPipelineCreateInfo &create_info);
@@ -87,14 +97,14 @@ struct GraphicsPipelineState {
 		bool m_enable{false};
 		void Enable(uint32_t attachment_count, VkBool32 blend_enable);
 		void Enable(const std::vector<VkPipelineColorBlendAttachmentState> &color_blend_attachments);
-	} m_color_blend_state;
+	} m_color_blend_state{};
 
 	struct DynamicState {
 		std::vector<VkDynamicState> m_dynamic_states;
 		VkPipelineDynamicStateCreateInfo m_create_info{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
 		bool m_enable{false};
 		void Enable(const std::vector<VkDynamicState> &dynamic_states);
-	} m_dynamic_state;
+	} m_dynamic_state{};
 
 	void PopGraphicsPipelineCreateInfo(VkGraphicsPipelineCreateInfo *info) const;
 };
